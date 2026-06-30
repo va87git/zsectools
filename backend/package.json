@@ -1,0 +1,19 @@
+{
+  "name": "sap-rfc-backend",
+  "version": "1.0.0",
+  "bin": "src/server.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "pg": "latest",
+    "pg-copy-streams": "latest",
+    "node-rfc": "^3.3.1"
+  }
+}
