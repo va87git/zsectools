@@ -90,6 +90,7 @@ In all cases (manual run, service, or Docker), the application is served on **`h
 - **The user interface is very basic**, with no theming support. Dark mode support is planned for a future release.
 - **Environment variables and settings management is incomplete or inconsistent**, and is currently scattered across multiple files.
 - **Some configuration details are not easily parameterizable**, for example the frontend port.
+- **Windows needs App restart when SAP SDK path changed**, this is because of env variables handling in Windows.
 
 ## SOD Analysis Accuracy
 
