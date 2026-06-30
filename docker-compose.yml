@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16
+    container_name: app-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: app-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      CORS_ORIGIN: http://localhost:5173
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: appdb
+      DB_USER: appuser
+      DB_PASSWORD: apppassword
+      # Optional: if you mount the SAP NW RFC SDK into the container,
+      # these help node-rfc resolve native libraries.
+      SAPNWRFC_HOME: ${SAPNWRFC_HOME:-/opt/sap/nwrfcsdk}
+      LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-/opt/sap/nwrfcsdk/lib}
+      SAP_USER: ${SAP_USER:-}
+      SAP_PASSWORD: ${SAP_PASSWORD:-}
+      SAP_ASHOST: ${SAP_ASHOST:-}
+      SAP_SYSNR: ${SAP_SYSNR:-}
+      SAP_CLIENT: ${SAP_CLIENT:-}
+      SAP_LANG: ${SAP_LANG:-EN}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      # Optional: mount host SDK folder into container.
+      # By default this points to a local placeholder so compose works even when /opt is not mountable.
+      # Set SAPNWRFC_HOST_PATH and SAPNWRFC_CONTAINER_PATH to real paths when needed.
+      - ${SAPNWRFC_HOST_PATH:-./_no_sdk_mount}:${SAPNWRFC_CONTAINER_PATH:-/opt/sap/nwrfcsdk}:ro
+      # Mount SAP table list file
+      #- ./SAP-TABLE-LIST.txt:/home/valerio/Documents/CursorTest/SAP-TABLE-LIST.txt:ro
+      - ./SAP-TABLE-LIST.txt:/app/SAP-TABLE-LIST.txt:ro
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: app-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE: http://localhost:3000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:
