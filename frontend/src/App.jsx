@@ -1119,7 +1119,7 @@ async function executeRfcBatch() {
     return (
       <>
         <h1>Quality and prerequisites check</h1>
-        <p style={{ marginTop: 0, color: '#666' }}>build V1.01(TEST OK 20260610. Verificare database collation)</p>
+        <p style={{ marginTop: 0, color: '#666' }}>build V1.01</p>
         <p>Use this section for backend/API health checks.</p>
 
         {renderRealmSelector()}
