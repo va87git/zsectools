@@ -18,7 +18,7 @@ The application is organized into sections, accessible from the side panel: **He
 
 ## Health Checks
 
-This section lets you verify that the application's prerequisites are correctly installed and working: backend availability, database connectivity, and the SAP NW RFC SDK setup. You can also save the SDK path here, which is persisted in the database and applied automatically on backend startup.
+This section lets you verify that the application's prerequisites are correctly installed and working: backend availability, database connectivity, and the SAP NW RFC SDK setup. You can also save the SDK path here, which is persisted in the database and applied automatically on backend startup. Please restart application if on Windows (no needs in Linux or Docker container). Keep in mind you still need to use Linux SAP SDK with Docker running on Windows.
 
 Before running an SAP connectivity check (`RFCPING`), select an active realm in the [SAP Realms](#sap-realms) section. The ping check verifies that the machine running the backend can actually reach the selected SAP system over the network and that the provided credentials are valid.
 
