@@ -1,0 +1,18 @@
+<service>
+  <id>ZSecTools_Backend</id>
+  <name>ZSecTools Backend Service</name>
+  <description>Background orchestration service for ZSecTools SAP Governance application.</description>
+  
+  <executable>%BASE%\..\node-bin\node.exe</executable>
+  <arguments>.\backend\src\server.js</arguments>
+  
+  <workingdirectory>%BASE%\..</workingdirectory>
+  
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  
+  <depend>ZSecTools_Postgres</depend>
+  <startmode>Automatic</startmode>
+</service>
