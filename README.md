@@ -32,7 +32,7 @@ SAP and SAP NetWeaver are trademarks or registered trademarks of SAP SE in Germa
 
 To use ZSecTools, you need to provide the official SAP connectivity libraries, which are **not included** in this repository due to SAP licensing restrictions.
 
-- **SAP NW RFC SDK**: download the latest version of the SAP NW RFC SDK from the [SAP ONE Support Launchpad](https://me.sap.com/swdcnav) (requires a valid SAP S-User account).
+- **SAP NW RFC SDK**: download the latest version of the SAP NW RFC SDK from the [SAP ONE Support Launchpad](https://me.sap.com/swdcnav) (requires a valid SAP S-User account). Visit directly SAP support page: https://support.sap.com/en/product/connectors/nwrfcsdk.html
 - **Installation**: place the library files (`sapnwrfc.dll` / `.so`) in your system path, or save the SDK path from the app's **Health Checks** panel so it can be applied automatically on backend startup.
 
 ## Installation
