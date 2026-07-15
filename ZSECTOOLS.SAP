@@ -1,0 +1,107 @@
+DATE                                              20220314                                          165739
+RELEASE                                           753
+LOADED_AGRS                                       ZSECTOOLS
+AGR_DEFINE                                        100ZSECTOOLS                                                  VANGELONI   20220314161523000000000000000VANGELONI   20220314165721000000000000000
+AGR_1250                                          100ZSECTOOLS                    000001S_RFC     T-SA92272200    U  O000004
+AGR_1250                                          100ZSECTOOLS                    000002S_TABU_DIST-SA92272200    U  O000010
+AGR_1250                                          100ZSECTOOLS                    000003S_TABU_NAMT-SA92272200    U  O000014
+AGR_1250                                          100ZSECTOOLS                    000004S_TOOLS_EXT-SA92272200    U  O000018
+AGR_1251                                          100ZSECTOOLS                    000089S_RFC     T-SA92272200    RFC_NAME  DDIF_FIELDINFO_GET                                                              U  O000006
+AGR_1251                                          100ZSECTOOLS                    000001S_RFC     T-SA92272200    ACTVT     16                                                                              U  O000005
+AGR_1251                                          100ZSECTOOLS                    000002S_RFC     T-SA92272200    RFC_NAME  RFCPING                                                                         U  O000006
+AGR_1251                                          100ZSECTOOLS                    000003S_RFC     T-SA92272200    RFC_NAME  RFC_READ_TABLE                                                                  U  O000006
+AGR_1251                                          100ZSECTOOLS                    000004S_RFC     T-SA92272200    RFC_TYPE  *                                                                               U  O000007
+AGR_1251                                          100ZSECTOOLS                    000005S_RFC     T-SA92272200    RFC_NAME  RFC_FUNCTION_SEARCH                                                             U  O000006
+AGR_1251                                          100ZSECTOOLS                    000006S_RFC     T-SA92272200    RFC_NAME  RFC_METADATA_GET                                                                U  O000006
+AGR_1251                                          100ZSECTOOLS                    000007S_TABU_DIST-SA92272200    ACTVT     03                                                                              U  O000011
+AGR_1251                                          100ZSECTOOLS                    000008S_TABU_DIST-SA92272200    DICBERCLS SS                                                                              U  O000012
+AGR_1251                                          100ZSECTOOLS                    000009S_TABU_NAMT-SA92272200    ACTVT     03                                                                              U  O000015
+AGR_1251                                          100ZSECTOOLS                    000010S_TABU_NAMT-SA92272200    TABLE     ADR6                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000011S_TABU_NAMT-SA92272200    TABLE     AGR_1250                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000012S_TABU_NAMT-SA92272200    TABLE     AGR_1252                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000013S_TABU_NAMT-SA92272200    TABLE     AGR_AGRS                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000014S_TABU_NAMT-SA92272200    TABLE     AGR_1016                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000015S_TABU_NAMT-SA92272200    TABLE     ADCP                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000016S_TABU_NAMT-SA92272200    TABLE     ADRP                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000017S_RFC     T-SA92272200    RFC_NAME  SWNC_COLLECTOR_GET_AGGREGATES                                                   U  O000006
+AGR_1251                                          100ZSECTOOLS                    000018S_TOOLS_EXT-SA92272200    AUTH      S_TOOLS_EX_A                                                                    U  O000019
+AGR_1251                                          100ZSECTOOLS                    000019S_TABU_NAMT-SA92272200    TABLE     AGR_1251                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000020S_TABU_DIST-SA92272200    DICBERCLS SPWD                                                                            U  O000012
+AGR_1251                                          100ZSECTOOLS                    000021S_TABU_DIST-SA92272200    DICBERCLS SC                                                                              U  O000012
+AGR_1251                                          100ZSECTOOLS                    000022S_TABU_DIST-SA92272200    DICBERCLS SA                                                                              U  O000012
+AGR_1251                                          100ZSECTOOLS                    000023S_TABU_DIST-SA92272200    DICBERCLS PC                                                                              U  O000012
+AGR_1251                                          100ZSECTOOLS                    000024S_TABU_DIST-SA92272200    DICBERCLS PA                                                                              U  O000012
+AGR_1251                                          100ZSECTOOLS                    000025S_TABU_DIST-SA92272200    DICBERCLS MCOR                                                                            U  O000012
+AGR_1251                                          100ZSECTOOLS                    000026S_TABU_DIST-SA92272200    DICBERCLS FC01                                                                            U  O000012
+AGR_1251                                          100ZSECTOOLS                    000027S_TABU_DIST-SA92272200    DICBERCLS BWC                                                                             U  O000012
+AGR_1251                                          100ZSECTOOLS                    000028S_TABU_DIST-SA92272200    DICBERCLS &NC&                                                                            U  O000012
+AGR_1251                                          100ZSECTOOLS                    000029S_TABU_NAMT-SA92272200    TABLE     PA0105                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000030S_TABU_NAMT-SA92272200    TABLE     RSECBIAU                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000031S_TABU_NAMT-SA92272200    TABLE     RSECHIE                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000032S_TABU_NAMT-SA92272200    TABLE     RSECHIE_CL                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000033S_TABU_NAMT-SA92272200    TABLE     RSECHIE_STRING                                                                  U  O000016
+AGR_1251                                          100ZSECTOOLS                    000034S_TABU_NAMT-SA92272200    TABLE     RSECTXT                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000035S_TABU_NAMT-SA92272200    TABLE     RSECTXT_CL                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000036S_TABU_NAMT-SA92272200    TABLE     RSECUSERAUTH                                                                    U  O000016
+AGR_1251                                          100ZSECTOOLS                    000037S_TABU_NAMT-SA92272200    TABLE     RSECUSERAUTH_CL                                                                 U  O000016
+AGR_1251                                          100ZSECTOOLS                    000038S_TABU_NAMT-SA92272200    TABLE     RSECVAL                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000039S_TABU_NAMT-SA92272200    TABLE     RSECVAL_CL                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000040S_TABU_NAMT-SA92272200    TABLE     RSECVAL_STRING                                                                  U  O000016
+AGR_1251                                          100ZSECTOOLS                    000041S_TABU_NAMT-SA92272200    TABLE     T001                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000042S_TABU_NAMT-SA92272200    TABLE     T001W                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000043S_TABU_NAMT-SA92272200    TABLE     T777P                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000044S_TABU_NAMT-SA92272200    TABLE     T778P                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000045S_TABU_NAMT-SA92272200    TABLE     TADIR                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000046S_TABU_NAMT-SA92272200    TABLE     TBTCO                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000047S_TABU_NAMT-SA92272200    TABLE     TBTCP                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000048S_TABU_NAMT-SA92272200    TABLE     TDEVC                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000049S_TABU_NAMT-SA92272200    TABLE     TOBJ                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000050S_TABU_NAMT-SA92272200    TABLE     TOBJT                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000051S_TABU_NAMT-SA92272200    TABLE     TSTC                                                                            U  O000016
+AGR_1251                                          100ZSECTOOLS                    000052S_TABU_NAMT-SA92272200    TABLE     TSTCP                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000053S_TABU_NAMT-SA92272200    TABLE     TSTCT                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000054S_TABU_NAMT-SA92272200    TABLE     USGRP                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000055S_TABU_NAMT-SA92272200    TABLE     USGRPT                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000056S_TABU_NAMT-SA92272200    TABLE     USGRP_USER                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000057S_TABU_NAMT-SA92272200    TABLE     USOBT_C                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000058S_TABU_NAMT-SA92272200    TABLE     USOBX_C                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000059S_TABU_NAMT-SA92272200    TABLE     USORG                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000060S_TABU_NAMT-SA92272200    TABLE     USORG_DB                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000061S_TABU_NAMT-SA92272200    TABLE     USR01                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000062S_TABU_NAMT-SA92272200    TABLE     USR02                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000063S_TABU_NAMT-SA92272200    TABLE     USR06                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000064S_TABU_NAMT-SA92272200    TABLE     USR21                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000065S_TABU_NAMT-SA92272200    TABLE     USRACL                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000066S_TABU_NAMT-SA92272200    TABLE     USREFUS                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000067S_TABU_NAMT-SA92272200    TABLE     UST04                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000068S_TABU_NAMT-SA92272200    TABLE     UST10C                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000069S_TABU_NAMT-SA92272200    TABLE     UST10S                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000070S_TABU_NAMT-SA92272200    TABLE     UST12                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000071S_TABU_NAMT-SA92272200    TABLE     USVART                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000072S_TABU_NAMT-SA92272200    TABLE     PA0002                                                                          U  O000016
+AGR_1251                                          100ZSECTOOLS                    000073S_TABU_NAMT-SA92272200    TABLE     AGR_BUFFI                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000074S_TABU_NAMT-SA92272200    TABLE     AGR_DATEU                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000075S_TABU_NAMT-SA92272200    TABLE     AGR_DEFINE                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000076S_TABU_NAMT-SA92272200    TABLE     AGR_FLAGS                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000077S_TABU_NAMT-SA92272200    TABLE     AGR_HIER                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000078S_TABU_NAMT-SA92272200    TABLE     AGR_HIERT                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000079S_TABU_NAMT-SA92272200    TABLE     AGR_LSD                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000080S_TABU_NAMT-SA92272200    TABLE     AGR_TCODES                                                                      U  O000016
+AGR_1251                                          100ZSECTOOLS                    000081S_TABU_NAMT-SA92272200    TABLE     AGR_TEXTS                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000082S_TABU_NAMT-SA92272200    TABLE     AGR_TIME                                                                        U  O000016
+AGR_1251                                          100ZSECTOOLS                    000083S_TABU_NAMT-SA92272200    TABLE     AGR_USERS                                                                       U  O000016
+AGR_1251                                          100ZSECTOOLS                    000084S_TABU_NAMT-SA92272200    TABLE     DF14L                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000085S_TABU_NAMT-SA92272200    TABLE     DF14T                                                                           U  O000016
+AGR_1251                                          100ZSECTOOLS                    000086S_TABU_NAMT-SA92272200    TABLE     HRP1000                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000087S_TABU_NAMT-SA92272200    TABLE     HRP1001                                                                         U  O000016
+AGR_1251                                          100ZSECTOOLS                    000088S_TABU_NAMT-SA92272200    TABLE     PA0001                                                                          U  O000016
+AGR_TEXTS                                         100ZSECTOOLS                    E00000RFC Authorizations for ZSecTools application
+AGR_TEXTS                                         100ZSECTOOLS                    E00001This role grants RFC user to send authorization and statistic data to ZSecTools
+AGR_TEXTS                                         100ZSECTOOLS                    E00002Tool
+AGR_FLAGS                                         100ZSECTOOLS                    COLL_AGR  VANGELONI   20220314161523VANGELONI   20220314161523
+AGR_FLAGS                                         100ZSECTOOLS                    DEVCLASS  VANGELONI   20220314161523VANGELONI   20220314161523
+AGR_FLAGS                                         100ZSECTOOLS                    MASTER_LANVANGELONI   20220314161523VANGELONI   20220314161523E
+AGR_FLAGS                                         100ZSECTOOLS                    RESP_USER VANGELONI   20220314161523VANGELONI   20220314161523
+AGR_FLAGS                                         100ZSECTOOLS                    FORCE_MIX VANGELONI   20220314161629VANGELONI   20220314163908
+AGR_TIME                                          100ZSECTOOLS                    PROFILE   VANGELONI   20220314161629000000000000000VANGELONI   20220314163908000000000000000
+AGR_LSD                                           100ZSECTOOLS                                                  E
