@@ -1,3 +1,6 @@
+<div align="center">
+  <img src="frontend/assets/brand/zsectools-banner-v2.png" alt="logo" width="400">
+</div>
 # ZSecTools
 
 > An open-source collection of security, SOD analysis, and mass administration tools for SAP systems.
