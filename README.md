@@ -7,6 +7,7 @@
 - [About](#about)
 - [Disclaimer](#disclaimer)
 - [Prerequisites](#prerequisites)
+- [SAP Technical User](#sap-technical-user)
 - [Installation](#installation)
   - [Windows](#windows)
   - [Docker / Linux](#docker--linux)
@@ -32,10 +33,23 @@ SAP and SAP NetWeaver are trademarks or registered trademarks of SAP SE in Germa
 
 To use ZSecTools, you need to provide the official SAP connectivity libraries, which are **not included** in this repository due to SAP licensing restrictions.
 
-- **SAP NW RFC SDK**: download the latest version of the SAP NW RFC SDK from the [SAP ONE Support Launchpad](https://me.sap.com/swdcnav/products/_APP=00200682500000001943&_EVENT=DISPHIER&HEADER=Y&FUNCTIONBAR=N&EVENT=TREE&NE=NAVIGATE&ENR=01200314690100002214&V=MAINT) (requires a valid SAP S-User account).
+- **SAP NW RFC SDK**: download the latest version of the SAP NW RFC SDK from the [SAP ONE Support Launchpad](https://me.sap.com/swdcnav) (requires a valid SAP S-User account).
 
-If the link above is unavailable, please visit the [SAP support page directly](https://support.sap.com/en/product/connectors/nwrfcsdk.html)
+  If the link above is unavailable, please visit the [SAP support page directly](https://support.sap.com/en/product/connectors/nwrfcsdk.html).
+
 - **Installation**: place the library files (`sapnwrfc.dll` / `.so`) in your system path, or save the SDK path from the app's **Health Checks** panel so it can be applied automatically on backend startup.
+
+## SAP Technical User
+
+ZSecTools connects to SAP systems using a dedicated technical user, whose credentials are configured in the **SAP Realms** section of the application.
+
+This technical user should be set up as follows:
+
+- **User type**: `B` (System)
+- **Password**: strong and complex, following your organization's security policy
+- **Authorization**: assign the role `ZSECTOOLS`, available as [`ZSECTOOLS.SAP`](./ZSECTOOLS.SAP) in the root of this repository. This file can be imported directly into SAP using transaction `PFCG` (upload). Alternatively, you can create a custom role with at least the authorizations contained in that file.
+
+> **Note**: the `ZSECTOOLS.SAP` file is a SAP role export. It includes all the authorization objects and field values required for ZSecTools to read the necessary tables and execute the supported RFC calls. Please note that this role is strictly designed according to the **principle of least privilege**. Removing or restricting any of the included authorizations may cause the application to malfunction. Review the authorizations before importing them, and adjust them to your organization's security standards where appropriate.
 
 ## Installation
 
