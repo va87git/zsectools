@@ -11,6 +11,7 @@
 - [About](#about)
 - [Disclaimer](#disclaimer)
 - [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
 - [SAP Technical User](#sap-technical-user)
 - [Installation](#installation)
   - [Windows](#windows)
@@ -41,7 +42,34 @@ To use ZSecTools, you need to provide the official SAP connectivity libraries, w
 
   If the link above is unavailable, please visit the [SAP support page directly](https://support.sap.com/en/product/connectors/nwrfcsdk.html).
 
-- **Installation**: place the library files (`sapnwrfc.dll` / `.so`) in your system path, or save the SDK path from the app's **Health Checks** panel so it can be applied automatically on backend startup.
+- **Installation**: place the library files (`sapnwrfc.dll` / `.so`) in a folder on the host machine and set `SAPNWRFC_HOST_PATH` accordingly in your `.env` file (see [Configuration](#configuration)).
+> **Note**: you can also save the SDK path from the app's **Health Checks** panel so it can be applied automatically on backend startup, but tihs works for Windows and Linux only. On Docker the volume  with library files must be mounted, so please mantain your `.env` file in this case.
+
+## Configuration
+
+ZSecTools uses a single `.env` file in the project root for all environment-specific settings. This file is read automatically both by Docker Compose (for container setup and volume mounts) and by the Node.js backend (via `dotenv`).
+
+**Setup steps:**
+
+1. Copy the provided template to create your local configuration file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and fill in the values for your environment. The file is self-documented — each variable has an inline comment explaining what it does. The key values to set are:
+
+   | Variable | Description |
+   |---|---|
+   | `SAPNWRFC_HOST_PATH` | Absolute path to the SAP NW RFC SDK folder **on the host machine** |
+   | `SAPNWRFC_CONTAINER_PATH` | Path where the SDK will be mounted **inside the container** (default: same as host path) |
+   | `SAPNWRFC_HOME` | Must match `SAPNWRFC_CONTAINER_PATH` |
+   | `LD_LIBRARY_PATH` | Must be `<SAPNWRFC_CONTAINER_PATH>/lib` |
+   | `DB_HOST` | Use `db` when running via Docker Compose; use `localhost` when running the backend directly outside Docker |
+
+3. The `.env` file is listed in `.gitignore` and will never be committed. The template `.env.example` is committed in its place and should be kept up to date.
+
+> **Note for Windows users**: when running via `run.bat` or the Windows services, the `.env` file is not loaded automatically by the batch scripts — environment variables are set directly inside those scripts. If you change a value in `.env`, also update the corresponding line in `run.bat` (or restart the services after editing `install-services.bat`).
 
 ## SAP Technical User
 
@@ -49,18 +77,13 @@ ZSecTools connects to SAP systems using a dedicated technical user, whose creden
 
 This technical user should be set up as follows:
 
-- **User type**: `B` (System)
+- **User type**: `B` (System / Background)
 - **Password**: strong and complex, following your organization's security policy
-- **Authorization**: assign the role `ZSECTOOLS`, available as [`ZSECTOOLS.SAP`](./ZSECTOOLS.SAP) in the root of this repository. This file can be imported directly into SAP using transaction `PFCG` (upload). Alternatively, you can create a custom role with at least the authorizations contained in that file.
+- **Authorization**: assign the role `ZSECTOOLS`, available as [`ZSECTOOLS.SAP`](./ZSECTOOLS.SAP) in the root of this repository. This file can be imported directly into SAP using transaction `SG3I` or equivalent. Alternatively, you can create a custom role with at least the authorizations contained in that file.
 
 > **Note**: the `ZSECTOOLS.SAP` file is a SAP role export. It includes all the authorization objects and field values required for ZSecTools to read the necessary tables and execute the supported RFC calls. Please note that this role is strictly designed according to the **principle of least privilege**. Removing or restricting any of the included authorizations may cause the application to malfunction. Review the authorizations before importing them, and adjust them to your organization's security standards where appropriate.
 
 ## Installation
-
-Copy .env.example file to .env:
-```bash
-cp .env.example .env
-```
 
 ### Windows
 
@@ -76,9 +99,13 @@ If you prefer to use your own locally installed versions of Node.js and PostgreS
 
 ### Docker / Linux
 
-```bash
-sudo docker compose up --build
-```
+1. Make sure you have completed the [Configuration](#configuration) steps above and that `.env` exists with `SAPNWRFC_HOST_PATH` pointing to a valid SAP SDK installation on the host.
+
+2. Build and start the application:
+
+   ```bash
+   sudo docker compose up --build
+   ```
 
 > A native Linux setup is also provided (`setup.sh`, `run.sh`, `install-services.sh`), but these scripts have not been tested yet. Use the Docker approach for the most reliable experience on Linux for now.
 
@@ -105,6 +132,7 @@ In all cases (manual run, service, or Docker), the application is served on **`h
 - `frontend/`: browser UI (React + Vite)
 - `backend/`: API and integration logic (Node.js + Express), including SAP RFC calls via `node-rfc`
 - `docker-compose.yml`: local multi-service startup (frontend, backend, PostgreSQL)
+- `.env.example`: environment variable template — copy to `.env` and fill in your values
 - `setup.bat` / `run.bat` / `install-services.bat`: Windows setup, run, and service installation scripts
 - `setup.sh` / `run.sh` / `install-services.sh`: untested Linux equivalents
 
