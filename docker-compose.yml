@@ -50,7 +50,7 @@ services:
       # Optional: mount host SDK folder into container.
       # By default this points to a local placeholder so compose works even when /opt is not mountable.
       # Set SAPNWRFC_HOST_PATH and SAPNWRFC_CONTAINER_PATH to real paths when needed.
-      - ${SAPNWRFC_HOST_PATH:-./_no_sdk_mount}:${SAPNWRFC_CONTAINER_PATH:-/opt/sap/nwrfcsdk}:ro
+      - ${SAPNWRFC_HOST_PATH}:${SAPNWRFC_CONTAINER_PATH}:ro
       # Mount SAP table list file
       #- ./SAP-TABLE-LIST.txt:/home/valerio/Documents/CursorTest/SAP-TABLE-LIST.txt:ro
       - ./SAP-TABLE-LIST.txt:/app/SAP-TABLE-LIST.txt:ro
