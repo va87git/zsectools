@@ -57,6 +57,11 @@ This technical user should be set up as follows:
 
 ## Installation
 
+Copy .env.example file to .env:
+```bash
+cp .env.example .env
+```
+
 ### Windows
 
 Run the setup script:
