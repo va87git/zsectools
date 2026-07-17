@@ -1252,6 +1252,27 @@ export async function getSodRiskDescription(realmLanguage, rulesetId, riskId) {
  * Runs the SOD analysis for all elements in sod_ra_elements.
  * Write results in sod_ra_results and return first 100 rows + total.
  */
+
+function translateRiskLevel(numericValue) {
+  switch (String(numericValue).trim()) {
+    case '0': return 'Medium';
+    case '1': return 'High';
+    case '2': return 'Low';
+    case '3': return 'Critical';
+    case '4': return 'On Hold';
+    default:  return numericValue || 'Unknown';
+  }
+}
+
+function translateRiskType(numericValue) {
+  switch (String(numericValue).trim()) {
+    case '1': return 'SOD Risk';
+    case '2': return 'Critical Function';
+    case '3': return 'Critical Permission';
+    default:  return numericValue || 'Unknown';
+  }
+}
+
 export async function runSodAnalysis(realm, rulesetId, elementType, analysisLevel, realmLanguage, onProgress = null) {
   // Fetch the realm reference date BEFORE acquiring the dedicated client
   const realmConfig = await getSapRealm(realm);
@@ -1278,6 +1299,8 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       elementdescription TEXT,
       riskid TEXT,
       riskdescription TEXT,
+      risklevel TEXT,
+      risktype TEXT,
       functionid TEXT,
       functiondescription TEXT,
       authobject TEXT,
@@ -1429,6 +1452,15 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
     for (const risk of risks) {
       const riskId = risk.riskid;
       const riskDesc = await getSodRiskDescription(realmLanguage, rulesetId, riskId);
+      // Fetch and translate risklevel and risktype from sod_risks
+      const riskMetaRes = await q(
+        `SELECT risklevel, risktype FROM sod_risks WHERE rulesetid = $1 AND riskid = $2 LIMIT 1`,
+        [rulesetId, riskId]
+      );
+      const riskLevelRaw = riskMetaRes.rows[0]?.risklevel ?? '';
+      const riskTypeRaw  = riskMetaRes.rows[0]?.risktype  ?? '';
+      const riskLevel = translateRiskLevel(riskLevelRaw);
+      const riskType  = translateRiskType(riskTypeRaw);
       const functionIds = ['fun1','fun2','fun3','fun4','fun5']
         .map(f => risk[f]).filter(f => f && f.trim() !== '');
       if (functionIds.length === 0) continue;
@@ -1689,14 +1721,14 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
 
           await q(`
             INSERT INTO sod_ra_results
-            (elementtype,elementid,elementdescription,riskid,riskdescription,
+            (elementtype,elementid,elementdescription,riskid,riskdescription,risklevel,risktype,
              functionid,functiondescription,authobject,authfield,
              searchfrom,searchto,foundvaluefrom,foundvalueto,
              authorizationID,profilesingle,profilecomposite,rolesingle,rolecomposite)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
           `, [
             elementType, elementId, elementDesc,
-            riskId, riskDesc, functId, functDesc,
+            riskId, riskDesc, riskLevel, riskType, functId, functDesc,
             row.objectToSearch, row.field,
             row.searchFrom, row.searchTo,
             row.foundFrom, row.foundTo,
