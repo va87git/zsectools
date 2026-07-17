@@ -210,34 +210,34 @@ export async function deleteSapRealm(realm) {
   await pool.query(`DELETE FROM sap_user_statistics WHERE realm = $1`, [realm]);
   await pool.query(`DELETE FROM sap_user_stats WHERE realm = $1`, [realm]);
   await pool.query(`DELETE FROM sap_raw_user_stats WHERE realm = $1`, [realm]);
-  
+
   // Delete all dynamically created raw tables for this realm (sap_raw_<tablename>)
   // We need to find them first
   /*
   const tableResult = await pool.query(
-    `SELECT table_name FROM information_schema.tables 
+    `SELECT table_name FROM information_schema.tables
      WHERE table_schema = 'public' AND table_name LIKE 'sap_raw_%'`
   );
-  
+
   for (const table of tableResult.rows) {
     const tableName = table.table_name;
     await pool.query(`DELETE FROM "${tableName}" WHERE realm = $1`, [realm]);
   }*/
-  
+
   //New logic for realm-scoped table cleanup:
   //updated to also delete report and yr tables. Previously: LIKE 'sap_raw_` + realm + `%'`);
   const tableRealmResult = await pool.query(
-    `SELECT table_name FROM information_schema.tables 
+    `SELECT table_name FROM information_schema.tables
      WHERE table_schema = 'public' AND table_name LIKE '%` + realm + `%'`);
-  
-  
+
+
   //drop all tables for this realm:
     for (const table of tableRealmResult.rows) {
     var tableName = table.table_name;
     //console.log("!INFO: entered the for loop. Table: " + tableName);
     await pool.query(`DROP TABLE IF EXISTS "${tableName}";`);
   }
-  
+
   // Finally, delete the realm itself
   const result = await pool.query(
     `DELETE FROM sap_realms WHERE realm = $1`,
@@ -276,9 +276,9 @@ function escapeCopyValue(value) {
   if (value === null || value === undefined || value === '') {
     return '\\N'; // NULL marker for COPY
   }
-  
+
   let str = String(value);
-  
+
   // Escape backslash first, then other special chars
   str = str.replace(/\\/g, '\\\\');
   str = str.replace(/\t/g, '\\t');
@@ -286,7 +286,7 @@ function escapeCopyValue(value) {
   str = str.replace(/\r/g, '\\r');
   str = str.replace(/'/g, "\\'");
   str = str.replace(/"/g, '\\"');
-  
+
   return str;
 }
 
@@ -297,28 +297,28 @@ function convertSapDate(value) {
   if (!value || value.length !== 8 || value === '00000000') {
     return null;
   }
-  
+
   const year = parseInt(value.substring(0, 4), 10);
   const month = parseInt(value.substring(4, 6), 10);
   const day = parseInt(value.substring(6, 8), 10);
-  
+
   // Validate month and day ranges
   if (month < 1 || month > 12 || day < 1 || day > 31) {
     return null;
   }
-  
+
   // Additional validation: check if day is valid for the given month
   const daysInMonth = new Date(year, month, 0).getDate();
   if (day > daysInMonth) {
     return null;
   }
-  
+
   // PostgreSQL DATE range: 4713 BC to 4714 AD
   // We allow years from 1 to 4714 (SAP typically uses 1900-9999, but we cap at PostgreSQL max)
   if (year < 1 || year > 4714) {
     return null;
   }
-  
+
   // YYYYMMDD -> YYYY-MM-DD
   return `${value.substring(0, 4)}-${value.substring(4, 6)}-${value.substring(6, 8)}`;
 }
@@ -329,16 +329,16 @@ function convertSapTime(value) {
   if (!value || value.length !== 6 || value === '000000') {
     return null;
   }
-  
+
   const hours = parseInt(value.substring(0, 2), 10);
   const minutes = parseInt(value.substring(2, 4), 10);
   const seconds = parseInt(value.substring(4, 6), 10);
-  
+
   // Validate time ranges
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
     return null;
   }
-  
+
   // HHMMSS -> HH:MM:SS
   return `${value.substring(0, 2)}:${value.substring(2, 4)}:${value.substring(4, 6)}`;
 }
@@ -349,21 +349,21 @@ function convertSapPacked(value) {
   if (!value || value.trim() === '') {
     return null;
   }
-  
+
   // Remove leading/trailing spaces and check if it's a valid number
   const trimmed = String(value).trim();
-  
+
   // Check if it's a valid numeric string (digits, optional minus sign, optional decimal point)
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
     return trimmed;
   }
-  
+
   // If it looks like a packed number with leading zeros, return as-is
   // PostgreSQL NUMERIC can handle it
   if (/^-?\d+$/.test(trimmed)) {
     return trimmed;
   }
-  
+
   // Invalid format, return null to avoid DB errors
   return null;
 }
@@ -373,10 +373,10 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
 
   // New table naming: sap_raw_[realm]_[tableName]
   const sanitizedTableName = `sap_raw_${realm.toLowerCase()}_${tableName.toLowerCase()}`;
-  
+
   // Reserved columns that conflict with our schema - rename them
   const reservedCols = ['id', 'imported_at'];
-  
+
   // Build column definitions with proper types from SAP metadata
   const columnDefs = fields.map(f => {
     const colName = reservedCols.includes(f.name.toLowerCase()) ? `${f.name}_sap` : f.name;
@@ -387,8 +387,8 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
   // Check if table exists
   const tableCheck = await pool.query(`
     SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = $1
     )
   `, [sanitizedTableName]);
@@ -408,16 +408,16 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
     // Table exists - check for new columns and add them
     const existingColsResult = await pool.query(`
       SELECT column_name, data_type
-      FROM information_schema.columns 
+      FROM information_schema.columns
       WHERE table_name = $1
     `, [sanitizedTableName]);
-    
+
     const existingCols = new Set(existingColsResult.rows.map(r => r.column_name.toLowerCase()));
-    
+
     for (const f of fields) {
       const colName = reservedCols.includes(f.name.toLowerCase()) ? `${f.name}_sap` : f.name;
       const colNameLower = colName.toLowerCase();
-      
+
       if (!existingCols.has(colNameLower)) {
         const colType = mapSapTypeToPg(f.type, f.length);
         await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN "${colNameLower}" ${colType}`);
@@ -439,10 +439,10 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
   // Use COPY FROM STDIN for bulk insert (much faster than individual INSERTs)
   const { pipeline } = await import('node:stream/promises');
   const { Transform } = await import('node:stream');
-  
+
   // Build COPY command
   const copyCommand = `COPY "${sanitizedTableName}" (${insertCols.join(', ')}) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t', NULL '\\N')`;
-  
+
   // Create a transform stream to convert rows to TSV format
   const rowStream = new Transform({
     objectMode: true,
@@ -452,7 +452,7 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
         const values = fields.map(f => {
           const colName = reservedCols.includes(f.name.toLowerCase()) ? `${f.name}_sap` : f.name;
           let value = row[colName] ?? row[f.name] ?? null;
-          
+
           // Convert SAP date/time/numeric formats if needed, with validation
           if (f.type === 'D' && value) {
             value = convertSapDate(value);
@@ -461,10 +461,10 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
           } else if (f.type === 'P' && value) {
             value = convertSapPacked(value);
           }
-          
+
           return escapeCopyValue(value);
         });
-        
+
         const line = values.join('\t') + '\n';
         this.push(line);
         callback();
@@ -473,11 +473,11 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
       }
     }
   });
-  
+
   // Execute COPY command using pg-copy-streams
   const client = await pool.connect();
   const ingestStream = copyStreams.from(copyCommand);
-  
+
   try {
     const copyPromise = new Promise((resolve, reject) => {
       ingestStream.on('finish', resolve);
@@ -485,7 +485,7 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
     });
 
     client.query(ingestStream);
-    
+
     // Pipe rows through transform stream to COPY
     await pipeline(
       (async function* generateRows() {
@@ -496,7 +496,7 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
       rowStream,
       ingestStream
     );
-    
+
     await copyPromise;
   } finally {
     client.release();
@@ -638,18 +638,18 @@ await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "
     if (!entryId || typeof entryId !== 'string') {
       return { action: null, actiontype: null };
     }
-    
+
     const trimmed = entryId.trimEnd();
     if (trimmed.length === 0) {
       return { action: null, actiontype: null };
     }
-    
+
     // Last character is the ACTIONTYPE
     const actiontype = trimmed.charAt(trimmed.length - 1);
-    
+
     // Everything before the last character (after trimming trailing spaces) is the ACTION
     const action = trimmed.slice(0, trimmed.length - 1).trimEnd();
-    
+
     return { action, actiontype };
   };
 
@@ -657,7 +657,7 @@ await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "
     const colNames = columns.map(c => `"${c.toLowerCase()}"`).join(', ');
     const colPlaceholders = columns.map((_, i) => `$${i + 4}`).join(', ');
     const values = columns.map(c => sanitizeValue(row[c]));
-    
+
     // Parse entry_id to extract ACTION and ACTIONTYPE
     const entryIdValue = row.ENTRY_ID || row.entry_id || '';
     const { action, actiontype } = parseEntryId(entryIdValue);
@@ -665,9 +665,9 @@ await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "
     // Build full placeholder list including action and actiontype with explicit TEXT casts
     const actionPlaceholder = `$${columns.length + 4}::TEXT`;
     const actiontypePlaceholder = `$${columns.length + 5}::TEXT`;
-    
+
     await pool.query(
-      `INSERT INTO "${sanitizedTableName}" (realm, period_type, selected_at, ${colNames}, "action", "actiontype") 
+      `INSERT INTO "${sanitizedTableName}" (realm, period_type, selected_at, ${colNames}, "action", "actiontype")
        VALUES ($1, $2, $3::timestamptz, ${colPlaceholders}, ${actionPlaceholder}, ${actiontypePlaceholder})`,
       [realm, periodType, selectedAtIso, ...values, action, actiontype]
     );
@@ -685,7 +685,7 @@ await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "
 
 export async function getUserStats(realm, periodType, limit = 100, offset = 0) {
   const sanitizedTableName = 'sap_raw_user_stats';
-  
+
   try {
     let query = `SELECT * FROM "${sanitizedTableName}" WHERE realm = $1`;
     const params = [realm];
@@ -737,10 +737,10 @@ export async function exportTablesToTxt(realm, tableNames) {
   const results = [];
   for (const tableName of tableNames) {
     const sanitizedTableName = `sap_raw_${realm.toLowerCase()}_${tableName.toLowerCase()}`;
-    
+
     try {
       const dataResult = await pool.query(`SELECT * FROM "${sanitizedTableName}" ORDER BY id`);
-      
+
       const tableComment = `# Table: ${tableName.toUpperCase()}`;
       let typeComment = '# TYPES: ';
       let header = '';
@@ -751,8 +751,8 @@ export async function exportTablesToTxt(realm, tableNames) {
         header = columns.join('\t');
 
         const typeResult = await pool.query(
-          `SELECT column_name, data_type, character_maximum_length 
-           FROM information_schema.columns 
+          `SELECT column_name, data_type, character_maximum_length
+           FROM information_schema.columns
            WHERE table_name = $1`,
           [sanitizedTableName]
         );
@@ -769,7 +769,7 @@ export async function exportTablesToTxt(realm, tableNames) {
         const typesRow = columns.map(col => typeMap[col.toLowerCase()] || 'text').join('|');
         typeComment = `# TYPES: ${typesRow}`;
 
-        rows = dataResult.rows.map(row => 
+        rows = dataResult.rows.map(row =>
           columns.map(col => {
             const val = row[col];
             if (val === null || val === undefined) return '';
@@ -792,20 +792,20 @@ export async function exportStatisticsToTxt(realm, selectedAt = null, periodType
   try {
     let query = `SELECT * FROM "${sanitizedTableName}" WHERE realm = $1`;
     const params = [realm];
-    
+
     if (selectedAt) {
       query += ` AND selected_at = $2::timestamptz`;
       params.push(selectedAt);
     }
-    
+
     query += ` ORDER BY id`;
-    
+
     const dataResult = await pool.query(query, params);
     if (dataResult.rows.length > 0) {
       // Keep selected_at in the exported columns
       const columns = Object.keys(dataResult.rows[0]).filter(c => c !== 'id' && c !== 'realm' && c !== 'period_type' && c !== 'imported_at');
       const header = columns.join('\t');
-      const rows = dataResult.rows.map(row => 
+      const rows = dataResult.rows.map(row =>
         columns.map(col => {
           const val = row[col];
           if (col === 'selected_at' && val instanceof Date) {
@@ -852,12 +852,12 @@ export async function importTablesFromTxt(realm, tableName, txtContent) {
 
   // 3. Table creation
   const sanitizedTableName = `sap_raw_${realm.toLowerCase()}_${detectedTableName.toLowerCase()}`;
-  
+
   const tableCheck = await pool.query(
-    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)`, 
+    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)`,
     [sanitizedTableName]
   );
-  
+
   if (!tableCheck.rows[0].exists) {
     const columnDefs = header.map((col, idx) => {
       const type = columnTypes[idx] || 'text';
@@ -873,7 +873,7 @@ export async function importTablesFromTxt(realm, tableName, txtContent) {
   let imported = 0;
   for (const line of dataLines) {
     const rawValues = line.split('\t');
-    
+
     // LOGIC CORRECTION:
     // If the row has fewer columns than the header, fill in null values
     // if there are more, we truncate them (ignore the excess)
@@ -886,10 +886,10 @@ export async function importTablesFromTxt(realm, tableName, txtContent) {
     // now we always have an array of the correct length
     const placeholders = normalizedValues.map((_, idx) => `$${idx + 1}`).join(', ');
     const columnNames = header.map(col => `"${col.toLowerCase()}"`).join(', ');
-    
+
     try {
       await pool.query(
-        `INSERT INTO "${sanitizedTableName}" (${columnNames}) VALUES (${placeholders})`, 
+        `INSERT INTO "${sanitizedTableName}" (${columnNames}) VALUES (${placeholders})`,
         normalizedValues
       );
       imported++;
@@ -1468,70 +1468,189 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       const foundByFunction = {};
 
       for (const functId of functionIds) {
-        const actionsRes = await q(
-          `SELECT action FROM sod_function_actions
-           WHERE rulesetid = $1 AND functid = $2
-             AND (inactive IS NULL OR inactive = '0' OR inactive = '')`,
-          [rulesetId, functId]
-        );
-
-        const foundRows = [];
-
-        for (const actionRow of actionsRes.rows) {
-          const action = actionRow.action;
-          let objectToSearch, actionValue;
-          if (action.startsWith('[')) {
-            objectToSearch = 'S_SERVICE';
-            actionValue = action.replace(/^\[.*?\]/, '').trim();
-          } else {
-            objectToSearch = 'S_TCODE';
-            actionValue = action;
-          }
-
-          const authsRes = await q(
-            `SELECT DISTINCT objct, auth, field, von, bis, profile_s, profile_c, role_single, role_composite
-             FROM tmp_sod_element_auth
-             WHERE elementid = $1 AND UPPER(objct) = UPPER($2)`,
-            [elementId, objectToSearch]
-          );
-
-          // Group by auth
-          const authMap = {};
-          for (const row of authsRes.rows) {
-            const key = row.auth;
-            if (!authMap[key]) authMap[key] = { auth: row.auth, profile_s: row.profile_s, profile_c: row.profile_c, role_single: row.role_single || '', role_composite: row.role_composite || '', fields: [], froms: [], tos: [] };
-            authMap[key].fields.push(row.field);
-            authMap[key].froms.push(row.von);
-            authMap[key].tos.push(row.bis);
-          }
-
-          for (const authEntry of Object.values(authMap)) {
-            const matched = authorizationCheck(
-              authEntry.auth,
-              objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
-              objectToSearch, ['TCD'], [actionValue], [actionValue]
-            );
-            if (matched) {
-              const mi = authEntry.fields.findIndex((f, i) =>
-                checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
+      const actionsRes = await q(
+                `SELECT action FROM sod_function_actions
+                 WHERE rulesetid = $1 AND functid = $2
+                   AND (inactive IS NULL OR inactive = '0' OR inactive = '')`,
+                [rulesetId, functId]
               );
 
-              // ── PERMISSION CHECK (if analysisLevel === 'Permission') ──────────
-              let permMatchRows = [];
-              if (analysisLevel === 'Permission') {
-                // Fetch the sod_function_permissions rows for this functid+action
+              const foundRows = [];
+
+              if (actionsRes.rows.length > 0) {
+                // =========================================================================
+                // SCENARIO A: function has actions
+                // =========================================================================
+                for (const actionRow of actionsRes.rows) {
+                  const action = actionRow.action;
+                  let objectToSearch, actionValue;
+                  if (action.startsWith('[')) {
+                    objectToSearch = 'S_SERVICE';
+                    actionValue = action.replace(/^\[.*?\]/, '').trim();
+                  } else {
+                    objectToSearch = 'S_TCODE';
+                    actionValue = action;
+                  }
+
+                  const authsRes = await q(
+                    `SELECT DISTINCT objct, auth, field, von, bis, profile_s, profile_c, role_single, role_composite
+                     FROM tmp_sod_element_auth
+                     WHERE elementid = $1 AND UPPER(objct) = UPPER($2)`,
+                    [elementId, objectToSearch]
+                  );
+
+                  const authMap = {};
+                  for (const row of authsRes.rows) {
+                    const key = row.auth;
+                    if (!authMap[key]) authMap[key] = { auth: row.auth, profile_s: row.profile_s, profile_c: row.profile_c, role_single: row.role_single || '', role_composite: row.role_composite || '', fields: [], froms: [], tos: [] };
+                    authMap[key].fields.push(row.field);
+                    authMap[key].froms.push(row.von);
+                    authMap[key].tos.push(row.bis);
+                  }
+
+                  for (const authEntry of Object.values(authMap)) {
+                    const matched = authorizationCheck(
+                      authEntry.auth,
+                      objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
+                      objectToSearch, ['TCD'], [actionValue], [actionValue]
+                    );
+                    if (matched) {
+                      const mi = authEntry.fields.findIndex((f, i) =>
+                        checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
+                      );
+
+                      let permMatchRows = [];
+                      if (analysisLevel === 'Permission') {
+                        const permsRes = await q(
+                          `SELECT resourceid, resourceextn, fromval, toval, searchtype, action
+                           FROM sod_function_permissions
+                           WHERE rulesetid = $1 AND functid = $2 AND action = $3
+                             AND COALESCE(inactive::TEXT, '0') != '1'`,
+                          [rulesetId, functId, action]
+                        );
+                        const permRows = permsRes.rows;
+
+                        if (permRows.length > 0) {
+                          const permByObj = {};
+                          for (const pr of permRows) {
+                            const obj = pr.resourceid;
+                            const fld = pr.resourceextn;
+                            if (!permByObj[obj]) permByObj[obj] = {};
+                            if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
+                            const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
+                            const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
+                            const fromval = fromEmpty ? '{' : pr.fromval;
+                            const toval   = toEmpty ? (fromEmpty ? '{' : fromval) : pr.toval;
+                            permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
+                          }
+
+                          const authFullRes = await q(
+                            `SELECT DISTINCT objct, field, von, bis, auth
+                             FROM tmp_sod_element_auth
+                             WHERE elementid = $1 AND auth = $2`,
+                            [elementId, authEntry.auth]
+                          );
+
+                          const authByObj = {};
+                          for (const ar of authFullRes.rows) {
+                            const obj = ar.objct.toUpperCase();
+                            if (!authByObj[obj]) authByObj[obj] = { fields: [], froms: [], tos: [] };
+                            authByObj[obj].fields.push(ar.field);
+                            authByObj[obj].froms.push(ar.von);
+                            authByObj[obj].tos.push(ar.bis);
+                          }
+
+                          let permPassed = true;
+                          for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
+                            const authObj = authByObj[resourceId.toUpperCase()];
+                            if (!authObj) { permPassed = false; break; }
+
+                            for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
+                              const andRows = valueRows.filter(v => v.searchtype === 'AND');
+                              const orRows  = valueRows.filter(v => v.searchtype === 'OR');
+
+                              for (const av of andRows) {
+                                const anyMatch = authObj.fields.some((f, i) =>
+                                  checkAuthorizationField(resourceExtn, av.fromval, av.toval, f, authObj.froms[i], authObj.tos[i])
+                                );
+                                if (!anyMatch) { permPassed = false; break; }
+                              }
+                              if (!permPassed) break;
+
+                              if (orRows.length > 0) {
+                                const anyOrMatch = orRows.some(ov =>
+                                  authObj.fields.some((f, i) =>
+                                    checkAuthorizationField(resourceExtn, ov.fromval, ov.toval, f, authObj.froms[i], authObj.tos[i])
+                                  )
+                                );
+                                if (!anyOrMatch) { permPassed = false; break; }
+                              }
+                            }
+                            if (!permPassed) break;
+                          }
+
+                          if (!permPassed) continue;
+
+                          permMatchRows = [];
+                          for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
+                            const authObj = authByObj[resourceId.toUpperCase()];
+                            if (!authObj) continue;
+                            for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
+                              for (const pv of valueRows) {
+                                const matchIdx = authObj.fields.findIndex((f, i) =>
+                                  checkAuthorizationField(resourceExtn, pv.fromval, pv.toval, f, authObj.froms[i], authObj.tos[i])
+                                );
+                                if (matchIdx >= 0) {
+                                  permMatchRows.push({
+                                    action, objectToSearch: resourceId, field: resourceExtn,
+                                    searchFrom: pv.fromval === '{' ? '' : pv.fromval,
+                                    searchTo: pv.toval === '{' ? '' : pv.toval,
+                                    foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
+                                    auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
+                                    roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
+                                  });
+                                }
+                              }
+                            }
+                          }
+                        }
+                      } // end analysisLevel === 'Permission'
+
+                      foundRows.push({
+                        action, objectToSearch,
+                        field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
+                        searchFrom: actionValue, searchTo: actionValue,
+                        foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
+                        foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0],
+                        auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
+                        roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
+                      });
+
+                      if (analysisLevel === 'Permission' && permMatchRows.length > 0) {
+                        foundRows.push(...permMatchRows);
+                      }
+                      break;
+                    }
+                  }
+                } // end loop actionsRow
+              } else if (analysisLevel === 'Permission') {
+                // =========================================================================
+                // SCENARIO B: PERMISSION-ONLY (es. S_DEVELOP - without actions)
+                // =========================================================================
+                //console.log(`Analysis [Permission-Only] Function: ${functId}`);
+
+                // 1. get permissions
                 const permsRes = await q(
                   `SELECT resourceid, resourceextn, fromval, toval, searchtype
                    FROM sod_function_permissions
-                   WHERE rulesetid = $1 AND functid = $2 AND action = $3
+                   WHERE rulesetid = $1 AND functid = $2
                      AND COALESCE(inactive::TEXT, '0') != '1'`,
-                  [rulesetId, functId, action]
+                  [rulesetId, functId]
                 );
                 const permRows = permsRes.rows;
 
-                // If there are no permission rows, the action passes without further checks
                 if (permRows.length > 0) {
-                  // Group by resourceid → resourceextn → array of {fromval, toval, searchtype}
+                  // group object - field
                   const permByObj = {};
                   for (const pr of permRows) {
                     const obj = pr.resourceid;
@@ -1540,127 +1659,99 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
                     if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
                     const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
                     const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
-                    // If both empty → wildcard {; if only toval is empty → single value (toval = fromval)
                     const fromval = fromEmpty ? '{' : pr.fromval;
                     const toval   = toEmpty ? (fromEmpty ? '{' : fromval) : pr.toval;
-                    permByObj[obj][fld].push({
-                      fromval,
-                      toval,
-                      searchtype: (pr.searchtype || 'AND').toUpperCase()
-                    });
+                    permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
                   }
 
-                  // Fetch all rows of the current authorization from the tmp table
-                  const authFullRes = await q(
-                    `SELECT DISTINCT objct, field, von, bis, auth
+                  // 2. get all authid
+                  const userAuthsRes = await q(
+                    `SELECT DISTINCT auth, objct, field, von, bis, profile_s, profile_c, role_single, role_composite
                      FROM tmp_sod_element_auth
-                     WHERE elementid = $1 AND auth = $2`,
-                    [elementId, authEntry.auth]
+                     WHERE elementid = $1`,
+                    [elementId]
                   );
 
-                  // Group the auth rows by objct → { fields[], froms[], tos[] }
-                  const authByObj = {};
-                  for (const ar of authFullRes.rows) {
-                    const obj = ar.objct.toUpperCase();
-                    if (!authByObj[obj]) authByObj[obj] = { fields: [], froms: [], tos: [] };
-                    authByObj[obj].fields.push(ar.field);
-                    authByObj[obj].froms.push(ar.von);
-                    authByObj[obj].tos.push(ar.bis);
-                  }
-
-                  // Check: all resourceid values must be present in the same authorizationId
-                  let permPassed = true;
-                  for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
-                    const authObj = authByObj[resourceId.toUpperCase()];
-                    if (!authObj) { permPassed = false; break; }
-
-                    // For each field (resourceextn) within the resourceid
-                    for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
-                      const andRows = valueRows.filter(v => v.searchtype === 'AND');
-                      const orRows  = valueRows.filter(v => v.searchtype === 'OR');
-
-                      // All AND values must match
-                      for (const av of andRows) {
-                        const anyMatch = authObj.fields.some((f, i) =>
-                          checkAuthorizationField(
-                            resourceExtn, av.fromval, av.toval,
-                            f, authObj.froms[i], authObj.tos[i]
-                          )
-                        );
-                        if (!anyMatch) { permPassed = false; break; }
-                      }
-                      if (!permPassed) break;
-
-                      // If there are OR values, at least one must match
-                      if (orRows.length > 0) {
-                        const anyOrMatch = orRows.some(ov =>
-                          authObj.fields.some((f, i) =>
-                            checkAuthorizationField(
-                              resourceExtn, ov.fromval, ov.toval,
-                              f, authObj.froms[i], authObj.tos[i]
-                            )
-                          )
-                        );
-                        if (!anyOrMatch) { permPassed = false; break; }
-                      }
+                  // group authid - object
+                  const authMap = {};
+                  for (const row of userAuthsRes.rows) {
+                    const aId = row.auth;
+                    const obj = row.objct.toUpperCase();
+                    if (!authMap[aId]) {
+                      authMap[aId] = {
+                        auth: aId, profile_s: row.profile_s, profile_c: row.profile_c,
+                        role_single: row.role_single || '', role_composite: row.role_composite || '',
+                        objects: {}
+                      };
                     }
-                    if (!permPassed) break;
+                    if (!authMap[aId].objects[obj]) authMap[aId].objects[obj] = { fields: [], froms: [], tos: [] };
+                    authMap[aId].objects[obj].fields.push(row.field);
+                    authMap[aId].objects[obj].froms.push(row.von);
+                    authMap[aId].objects[obj].tos.push(row.bis);
                   }
 
-                  if (!permPassed) continue; // this auth does not pass the Permission check
+                  // 3. cycle authid
+                  for (const authEntry of Object.values(authMap)) {
+                    let permPassed = true;
+                    let currentAuthMatchRows = [];
 
-                  // Collect the permission rows that matched, to insert them into the result
-                  permMatchRows = [];
-                  for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
-                    const authObj = authByObj[resourceId.toUpperCase()];
-                    if (!authObj) continue;
-                    for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
-                      for (const pv of valueRows) {
-                        const matchIdx = authObj.fields.findIndex((f, i) =>
-                          checkAuthorizationField(
-                            resourceExtn, pv.fromval, pv.toval,
-                            f, authObj.froms[i], authObj.tos[i]
-                          )
-                        );
-                        if (matchIdx >= 0) {
-                          permMatchRows.push({
-                            action, objectToSearch: resourceId,
-                            field: resourceExtn,
-                            searchFrom: pv.fromval === '{' ? '' : pv.fromval,
-                            searchTo: pv.toval === '{' ? '' : pv.toval,
-                            foundFrom: authObj.froms[matchIdx],
-                            foundTo: authObj.tos[matchIdx],
+                    for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
+                      const authObj = authEntry.objects[resourceId.toUpperCase()];
+                      if (!authObj) { permPassed = false; break; }
+
+                      for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
+                        const andRows = valueRows.filter(v => v.searchtype === 'AND');
+                        const orRows  = valueRows.filter(v => v.searchtype === 'OR');
+
+                        for (const av of andRows) {
+                          const matchIdx = authObj.fields.findIndex((f, i) =>
+                            checkAuthorizationField(resourceExtn, av.fromval, av.toval, f, authObj.froms[i], authObj.tos[i])
+                          );
+                          if (matchIdx === -1) { permPassed = false; break; }
+
+                          currentAuthMatchRows.push({
+                            action: '', objectToSearch: resourceId, field: resourceExtn,
+                            searchFrom: av.fromval === '{' ? '' : av.fromval, searchTo: av.toval === '{' ? '' : av.toval,
+                            foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
                             auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                            roleSingle: authEntry.role_single || '',
-                            roleComposite: authEntry.role_composite || ''
+                            roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
                           });
                         }
+                        if (!permPassed) break;
+
+                        if (orRows.length > 0) {
+                          let anyOrMatch = false;
+                          for (const ov of orRows) {
+                            const matchIdx = authObj.fields.findIndex((f, i) =>
+                              checkAuthorizationField(resourceExtn, ov.fromval, ov.toval, f, authObj.froms[i], authObj.tos[i])
+                            );
+                            if (matchIdx >= 0) {
+                              anyOrMatch = true;
+                              currentAuthMatchRows.push({
+                                action: '', objectToSearch: resourceId, field: resourceExtn,
+                                searchFrom: ov.fromval === '{' ? '' : ov.fromval, searchTo: ov.toval === '{' ? '' : ov.toval,
+                                foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
+                                auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
+                                roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
+                              });
+                              break;
+                            }
+                          }
+                          if (!anyOrMatch) { permPassed = false; break; }
+                        }
                       }
+                      if (!permPassed) break;
+                    }
+
+                    // if authid match permission map, save
+                    if (permPassed && currentAuthMatchRows.length > 0) {
+                      foundRows.push(...currentAuthMatchRows);
                     }
                   }
                 }
-              }
-              // ── end PERMISSION CHECK ─────────────────────────────────────────────
+              } // end loop actions
 
-              // Action row (S_TCODE / S_SERVICE)
-              foundRows.push({
-                action, objectToSearch,
-                field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
-                searchFrom: actionValue, searchTo: actionValue,
-                foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
-                foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0],
-                auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                roleSingle: authEntry.role_single || '',
-                roleComposite: authEntry.role_composite || ''
-              });
-              // In Permission mode, also add all the permission rows that matched
-              if (analysisLevel === 'Permission' && permMatchRows.length > 0) {
-                foundRows.push(...permMatchRows);
-              }
-              break;
-            }
-          }
-        } // end loop actions
+
 
         if (foundRows.length > 0) foundByFunction[functId] = foundRows;
       } // end loop functionIds
@@ -1668,7 +1759,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       // STEP 3: risk confirmed only if ALL functions have at least one action found
       if (!functionIds.every(f => foundByFunction[f] && foundByFunction[f].length > 0)) continue;
 
-      // STEP 4: inserisce in sod_ra_results
+      // STEP 4: add to sod_ra_results
       for (const functId of functionIds) {
         const functDesc = await getSodFunctionDescription(realmLanguage, rulesetId, functId);
         for (const row of foundByFunction[functId]) {
@@ -1780,13 +1871,13 @@ export function checkAuthorizationField(
 
     // If the value is "*", it covers everything: from "" to "{" (the character after 'z')
     if (f === "*") return ["", "{"];
-    
+
     // if contains "*", eg: "SAR*"
     if (f.includes("*")) {
       let prefix = f.replace("*", "");
       return [prefix, prefix + "{"]; // { is the ASCII character after 'z'
     }
-    
+
     return [f, t];
   };
 
@@ -1924,7 +2015,7 @@ export async function importStatisticsFromTxt(realm, txtContent) {
   const headerLine = linesArray[headerLineIndex].trim();
   const header = headerLine.split('\t');
   const selectedAtIdx = header.findIndex(h => h.toLowerCase() === 'selected_at');
-  
+
   // Ensure "selected_at" is not duplicated in columnDefs
   const filteredHeader = header.filter((_, idx) => idx !== selectedAtIdx);
   const columnDefs = filteredHeader.map(col => `"${col.toLowerCase()}" TEXT`).join(', ');
@@ -1945,10 +2036,10 @@ export async function importStatisticsFromTxt(realm, txtContent) {
   for (let i = headerLineIndex + 1; i < linesArray.length; i++) {
     const line = linesArray[i].trim();
     if (line.length === 0 || line.startsWith('#')) continue;
-    
+
     const values = line.split('\t');
     if (values.length !== header.length) continue;
-    
+
     // Use selected_at from file if available, otherwise current date
     let rowSelectedAt = new Date().toISOString();
     if (selectedAtIdx !== -1 && values[selectedAtIdx]) {
@@ -1957,10 +2048,10 @@ export async function importStatisticsFromTxt(realm, txtContent) {
 
     // Filter out the value corresponding to "selected_at" from the values array
     const filteredValues = values.filter((_, idx) => idx !== selectedAtIdx);
-    
+
     const placeholders = filteredValues.map((_, idx) => `$${idx + 4}`).join(', ');
     const columnNames = filteredHeader.map(col => `"${col.toLowerCase()}"`).join(', ');
-    
+
     await pool.query(
       `INSERT INTO "${sanitizedTableName}" (realm, period_type, selected_at, ${columnNames}) VALUES ($1, $2, $3::timestamptz, ${placeholders})`,
       [realm, periodType, rowSelectedAt, ...filteredValues]
@@ -1991,7 +2082,7 @@ export async function getAggregatedUserStats(realm) {
 export async function deleteUserStatsBatch(realm, periodType, selectedAt) {
   const sanitizedTableName = 'sap_raw_user_stats';
   const result = await pool.query(
-    `DELETE FROM "${sanitizedTableName}" 
+    `DELETE FROM "${sanitizedTableName}"
      WHERE realm = $1 AND period_type = $2 AND selected_at = $3::timestamptz`,
     [realm, periodType, selectedAt]
   );
@@ -2014,20 +2105,20 @@ export async function buildAdditionalInfos(realm) {
   }
   // Convert to YYYYMMDD format for SAP date comparison
   const sProjectDateSap = sProjectDate.replace(/-/g, '');
-  
+
   // Get Project language
   let sProjectLanguage = realmConfig.sap_language;
   let fistCharProjectLang = sProjectLanguage[0];
-  
+
   // Get Project client(mandante)
   let sProjectClient = realmConfig.sap_client;
 
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
-    
+
+
     // Drop target tables if exists
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_user_complete_info"`);
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_role_stcode_exploded"`);
@@ -2035,8 +2126,8 @@ export async function buildAdditionalInfos(realm) {
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_tcodes_description"`);
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_statistic_slim"`);
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_roles_infos"`);
-    
-    
+
+
 //**************************************info users:
     // Drop temporary tables if exists
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_adr6_clean"`);
@@ -2044,44 +2135,44 @@ export async function buildAdditionalInfos(realm) {
     // Query 1: Create temporary table
     await client.query(`
       CREATE TABLE "tmp_sap_raw_${realm}_adr6_clean" AS
-      SELECT 
-        "persnumber", 
-        "smtp_addr" 
+      SELECT
+        "persnumber",
+        "smtp_addr"
       FROM "sap_raw_${realm}_adr6"
-      WHERE 
-        "persnumber" <> '' AND 
+      WHERE
+        "persnumber" <> '' AND
         "valid_to" = ''
     `);
 
     // Query 2: Create users main info table
     await client.query(`
       CREATE TABLE "yr_${realm}_user_complete_info" AS
-      SELECT 
-        u02."bname", 
-        u02."gltgv", 
-        u02."gltgb", 
-        u02."erdat", 
-        u02."trdat", 
-        u02."uflag", 
-        u02."ustyp", 
-        u02."class", 
-        u21."persnumber", 
-        adrp."name_first", 
-        adrp."name_last", 
-        adrp."nickname", 
-        adrp."sort1", 
-        adrp."sort2", 
-        tmp."smtp_addr", 
-        adcp."department", 
+      SELECT
+        u02."bname",
+        u02."gltgv",
+        u02."gltgb",
+        u02."erdat",
+        u02."trdat",
+        u02."uflag",
+        u02."ustyp",
+        u02."class",
+        u21."persnumber",
+        adrp."name_first",
+        adrp."name_last",
+        adrp."nickname",
+        adrp."sort1",
+        adrp."sort2",
+        tmp."smtp_addr",
+        adcp."department",
         adcp."function" as "function_col",
-        CASE 
+        CASE
           WHEN (
-            (u02."gltgv" <= $1 OR u02."gltgv" = '19000101' OR u02."gltgv" IS NULL) 
+            (u02."gltgv" <= $1 OR u02."gltgv" = '19000101' OR u02."gltgv" IS NULL)
             AND (u02."gltgb" >= $1 OR u02."gltgb" = '19000101' OR u02."gltgb" IS NULL)
-          ) 
+          )
           AND (u02."uflag" <> '64' AND u02."uflag" <> '192')
-          THEN 1 
-          ELSE 0 
+          THEN 1
+          ELSE 0
         END AS "user_valid"
       FROM "sap_raw_${realm}_usr02" u02
       LEFT JOIN "sap_raw_${realm}_usr21" u21 ON u21."bname" = u02."bname"
@@ -2099,63 +2190,63 @@ export async function buildAdditionalInfos(realm) {
       CREATE TABLE yr_${realm}_role_stcode_exploded AS
 -- First part: range between LOW and HIGH
 --between:
-SELECT 
-    sap_raw_${realm}_AGR_1251.AGR_NAME, 
-    sap_raw_${realm}_AGR_1251.LOW, 
-    sap_raw_${realm}_AGR_1251.HIGH, 
-    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL, 
-    1 as EXPLODED 
+SELECT
+    sap_raw_${realm}_AGR_1251.AGR_NAME,
+    sap_raw_${realm}_AGR_1251.LOW,
+    sap_raw_${realm}_AGR_1251.HIGH,
+    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL,
+    1 as EXPLODED
 FROM sap_raw_${realm}_AGR_1251
 INNER JOIN sap_raw_${realm}_TSTC ON sap_raw_${realm}_TSTC.TCODE BETWEEN sap_raw_${realm}_AGR_1251.LOW AND sap_raw_${realm}_AGR_1251.HIGH
-WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE' 
-  AND sap_raw_${realm}_AGR_1251.HIGH <> '' 
+WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
+  AND sap_raw_${realm}_AGR_1251.HIGH <> ''
   AND sap_raw_${realm}_AGR_1251.DELETED is null
 
-UNION 
+UNION
 
 -- Seconda Parte: Corrispondenza esatta (senza wildcard). Low senza asterisco:
-SELECT 
-    sap_raw_${realm}_AGR_1251.AGR_NAME, 
-    sap_raw_${realm}_AGR_1251.LOW, 
-    sap_raw_${realm}_AGR_1251.HIGH, 
-    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL, 
-    0 as EXPLODED 
+SELECT
+    sap_raw_${realm}_AGR_1251.AGR_NAME,
+    sap_raw_${realm}_AGR_1251.LOW,
+    sap_raw_${realm}_AGR_1251.HIGH,
+    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL,
+    0 as EXPLODED
 FROM sap_raw_${realm}_AGR_1251
 INNER JOIN sap_raw_${realm}_TSTC ON sap_raw_${realm}_TSTC.TCODE = sap_raw_${realm}_AGR_1251.LOW
-WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE' 
-  AND sap_raw_${realm}_AGR_1251.DELETED is null 
-  AND sap_raw_${realm}_AGR_1251.HIGH is null 
+WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
+  AND sap_raw_${realm}_AGR_1251.DELETED is null
+  AND sap_raw_${realm}_AGR_1251.HIGH is null
   AND POSITION('*' IN sap_raw_${realm}_AGR_1251.LOW) = 0
 
-UNION 
+UNION
 
 -- Terza Parte: high (asterisco in high non viene considerato in sap)
-SELECT 
-    sap_raw_${realm}_AGR_1251.AGR_NAME, 
-    sap_raw_${realm}_AGR_1251.LOW, 
-    sap_raw_${realm}_AGR_1251.HIGH, 
-    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL, 
-    1 as EXPLODED 
+SELECT
+    sap_raw_${realm}_AGR_1251.AGR_NAME,
+    sap_raw_${realm}_AGR_1251.LOW,
+    sap_raw_${realm}_AGR_1251.HIGH,
+    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL,
+    1 as EXPLODED
 FROM sap_raw_${realm}_AGR_1251
 INNER JOIN sap_raw_${realm}_TSTC ON sap_raw_${realm}_TSTC.TCODE LIKE REPLACE(REPLACE(sap_raw_${realm}_AGR_1251.HIGH, '*', '%'), '_', '\_')
-WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE' 
-  AND sap_raw_${realm}_AGR_1251.DELETED is null 
+WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
+  AND sap_raw_${realm}_AGR_1251.DELETED is null
   AND sap_raw_${realm}_AGR_1251.HIGH <> ''
 
-UNION 
+UNION
 
 -- Fourth part: wildcard in the LOW field. Low with asterisk:
-SELECT 
-    sap_raw_${realm}_AGR_1251.AGR_NAME, 
-    sap_raw_${realm}_AGR_1251.LOW, 
-    sap_raw_${realm}_AGR_1251.HIGH, 
-    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL, 
-    1 as EXPLODED 
+SELECT
+    sap_raw_${realm}_AGR_1251.AGR_NAME,
+    sap_raw_${realm}_AGR_1251.LOW,
+    sap_raw_${realm}_AGR_1251.HIGH,
+    sap_raw_${realm}_TSTC.TCODE AS TCODETOTAL,
+    1 as EXPLODED
 FROM sap_raw_${realm}_AGR_1251
 INNER JOIN sap_raw_${realm}_TSTC ON sap_raw_${realm}_TSTC.TCODE LIKE REPLACE(REPLACE(sap_raw_${realm}_AGR_1251.LOW, '*', '%'), '_', '[_]')
-WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE' 
-  AND sap_raw_${realm}_AGR_1251.DELETED is null 
-  AND sap_raw_${realm}_AGR_1251.HIGH is null 
+WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
+  AND sap_raw_${realm}_AGR_1251.DELETED is null
+  AND sap_raw_${realm}_AGR_1251.HIGH is null
   AND POSITION('*' IN sap_raw_${realm}_AGR_1251.LOW) > 0
 `);
 
@@ -2165,19 +2256,19 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_agr_texts_local"`);
 
     //create tmp table with the project language only:
-    
+
 
     await client.query(`
       CREATE TABLE "tmp_sap_raw_${realm}_agr_texts_local" AS
-      SELECT 
+      SELECT
       *
       FROM "sap_raw_${realm}_agr_texts"
-      WHERE 
+      WHERE
         "spras" = $1
     `, [fistCharProjectLang]);
-    
+
     //create the final table starting from the project language via left join:
-    
+
         await client.query(`
       CREATE TABLE "yr_${realm}_roles_descriptions" AS
          SELECT sap_raw_${realm}_agr_define.agr_name, tmp_sap_raw_${realm}_agr_texts_local.text
@@ -2185,8 +2276,8 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
         LEFT JOIN tmp_sap_raw_${realm}_agr_texts_local ON tmp_sap_raw_${realm}_agr_texts_local.agr_name = sap_raw_${realm}_agr_define.agr_name
         WHERE tmp_sap_raw_${realm}_agr_texts_local.line IS NULL OR tmp_sap_raw_${realm}_agr_texts_local.line = '00000'
     `);
-    
-    
+
+
     let tmpAltLang = (sProjectLanguage[0] === 'I') ? 'E' : 'I';
     //update rows for the alternative language:
         await client.query(`
@@ -2198,9 +2289,9 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
         AND (sap_raw_${realm}_agr_texts.line IS NULL OR sap_raw_${realm}_agr_texts.line = '00000')
         AND sap_raw_${realm}_agr_texts.spras = $1
     `, [tmpAltLang]);
-    
+
     //update rows for German (fallback):
-    
+
             await client.query(`
  UPDATE "yr_${realm}_roles_descriptions"
         SET TEXT = sap_raw_${realm}_agr_texts.TEXT
@@ -2210,53 +2301,53 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
         AND (sap_raw_${realm}_agr_texts.line IS NULL OR sap_raw_${realm}_agr_texts.line = '00000')
         AND sap_raw_${realm}_agr_texts.spras = 'D'
     `);
-    
+
     //drop the temp table if it exists:
 
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_agr_texts_local"`);
-    
+
 //***********************************tcode decriptions:
-    
+
     //drop the temp table if it exists:
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_tstct_local"`);
-    
-    
+
+
     //create tmp table with the project language only:
-    
+
     await client.query(`
       CREATE TABLE "tmp_sap_raw_${realm}_tstct_local" AS
-      SELECT 
+      SELECT
       *
       FROM "sap_raw_${realm}_tstct"
-      WHERE 
+      WHERE
         "sprsl" = $1
     `, [fistCharProjectLang]);
-    
+
     //create the final table with the project language:
         await client.query(`
       CREATE TABLE "yr_${realm}_tcodes_description" AS
-      SELECT 
+      SELECT
       sap_raw_${realm}_tstc.tcode,
       tmp_sap_raw_${realm}_tstct_local.ttext
       FROM "sap_raw_${realm}_tstc"
       LEFT JOIN tmp_sap_raw_${realm}_tstct_local ON tmp_sap_raw_${realm}_tstct_local.tcode = sap_raw_${realm}_tstc.tcode
     `);
-    
+
     //update the final table with the alternative language:
-    
+
     await client.query(`
     UPDATE "yr_${realm}_tcodes_description"
         SET ttext = sap_raw_${realm}_tstct.ttext
         FROM "sap_raw_${realm}_tstct"
-        WHERE sap_raw_${realm}_tstct.tcode = yr_${realm}_tcodes_description.tcode AND 
+        WHERE sap_raw_${realm}_tstct.tcode = yr_${realm}_tcodes_description.tcode AND
         yr_${realm}_tcodes_description.ttext is null AND
         sap_raw_${realm}_tstct.sprsl = $1 AND
         sap_raw_${realm}_tstct.ttext <> '' AND
         sap_raw_${realm}_tstct.ttext IS NOT NULL
     `, [tmpAltLang]);
-    
+
     //fallback in DE:
-    
+
     await client.query(`
     UPDATE "yr_${realm}_tcodes_description"
         SET ttext = sap_raw_${realm}_tstct.ttext
@@ -2267,46 +2358,46 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
         sap_raw_${realm}_tstct.ttext <> '' AND
         sap_raw_${realm}_tstct.ttext IS NOT NULL
     `);
-    
-    
-    
+
+
+
     //drop the temp table if it exists:
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_tstct_local"`);
-    
+
 //****************************statistiche utente:
 //WARNING: THE CLIENT (MANDT) IS MISSING IN STATISTICS!!! It may be implicit. Investigate the call
 //remove MANDT from where if not used:
         await client.query(`
-    CREATE TABLE "yr_${realm}_statistic_slim" AS 
-    SELECT 
-        action, 
-        actiontype, 
-        account, 
+    CREATE TABLE "yr_${realm}_statistic_slim" AS
+    SELECT
+        action,
+        actiontype,
+        account,
         COUNT(DISTINCT selected_at) as nexec
     FROM sap_raw_user_stats
     WHERE realm = '${realm}'
     GROUP BY action, actiontype, account
     `);
-    
-    
+
+
 //*********************************roles info:
     // 1. Initial table creation: CASE WHEN replaces IIF
-    
+
     const query1 = `
         CREATE TABLE yr_${realm}_roles_infos AS
         SELECT
             D.AGR_NAME,
             D.TEXT,
-            CASE 
-                WHEN F.FLAG_VALUE = 'X' THEN 'COMPOSITE' 
-                ELSE 'SINGLE' 
+            CASE
+                WHEN F.FLAG_VALUE = 'X' THEN 'COMPOSITE'
+                ELSE 'SINGLE'
             END as ROLE_TYPE
         FROM yr_${realm}_roles_descriptions D
         LEFT JOIN sap_raw_${realm}_agr_flags F ON F.AGR_NAME = D.AGR_NAME
         WHERE F.FLAG_TYPE = 'COLL_AGR'
     `;
     await client.query(query1);
-    
+
     // 2. Update Derived: Postgres Syntax (UPDATE ... FROM ... WHERE)
     const updateDerivati = `
         UPDATE yr_${realm}_roles_infos RI
@@ -2316,7 +2407,7 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
           AND AD.PARENT_AGR <> ''
     `;
     await client.query(updateDerivati);
-    
+
     // 3. Update Composite da AGR_AGRS
     const updateComposite = `
         UPDATE yr_${realm}_roles_infos RI
@@ -2326,7 +2417,7 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
           AND AA.CHILD_AGR <> ''
     `;
     await client.query(updateComposite);
-    
+
     // 4. Insert the remaining ones (UNDEFINED)
     const insertUndefined = `
         INSERT INTO yr_${realm}_roles_infos (AGR_NAME, TEXT, ROLE_TYPE)
@@ -2339,7 +2430,7 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
         WHERE RI.ROLE_TYPE IS NULL
     `;
     await client.query(insertUndefined);
-    
+
     // 5. Final update to turn UNDEFINED into SINGLE if present in 1251
     const updateFinalSingle = `
         UPDATE yr_${realm}_roles_infos RI
@@ -2349,7 +2440,7 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
           AND RI.ROLE_TYPE = 'UNDEFINED'
     `;
     await client.query(updateFinalSingle);
-    
+
     return { success: true, message: 'Additional infos built successfully' };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -2388,7 +2479,7 @@ export async function executeReport(realm, reportType, options = {}) {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_user01"`);
         await client.query(`
           CREATE TABLE "yreport_${realm}_user01" AS
-          SELECT 
+          SELECT
             "bname" AS "userid",
             "gltgv" AS "valid_from",
             "gltgb" AS "valid_to",
@@ -2407,222 +2498,222 @@ export async function executeReport(realm, reportType, options = {}) {
             "function_col" AS "sapfunction",
             "user_valid"
           FROM "yr_${realm}_user_complete_info"
-          WHERE 
-            "erdat" <= $1 
-            AND ("trdat" <= $1 OR "trdat" IS NULL) 
-            AND ("ustyp" = 'A' OR "ustyp" = 'S') 
+          WHERE
+            "erdat" <= $1
+            AND ("trdat" <= $1 OR "trdat" IS NULL)
+            AND ("ustyp" = 'A' OR "ustyp" = 'S')
             AND "user_valid" = 1
         `, [deltaProjectDate]);
 
-        return { 
-          success: true, 
-          message: 'USER01 report executed successfully', 
+        return {
+          success: true,
+          message: 'USER01 report executed successfully',
           reportType: 'USER01',
           deltaProjectDate,
           tableName: `yreport_${realm}_user01`
         };
       }
-      
+
             case 'USER02': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_user02"`);
         await client.query(`
-    CREATE TABLE yreport_${realm}_user02 AS 
-    SELECT 
-    yr_${realm}_user_complete_info.BNAME AS USERID, 
-    yr_${realm}_user_complete_info.GLTGV AS DATE_FROM, 
-    yr_${realm}_user_complete_info.GLTGB AS DATE_TO, 
-    yr_${realm}_user_complete_info.ERDAT AS CREATED, 
-    yr_${realm}_user_complete_info.TRDAT AS LAST_LOGON, 
-    yr_${realm}_user_complete_info.USTYP, 
-    yr_${realm}_user_complete_info.CLASS AS USER_GROUP, 
-    yr_${realm}_user_complete_info.NAME_FIRST, 
-    yr_${realm}_user_complete_info.NAME_LAST, 
+    CREATE TABLE yreport_${realm}_user02 AS
+    SELECT
+    yr_${realm}_user_complete_info.BNAME AS USERID,
+    yr_${realm}_user_complete_info.GLTGV AS DATE_FROM,
+    yr_${realm}_user_complete_info.GLTGB AS DATE_TO,
+    yr_${realm}_user_complete_info.ERDAT AS CREATED,
+    yr_${realm}_user_complete_info.TRDAT AS LAST_LOGON,
+    yr_${realm}_user_complete_info.USTYP,
+    yr_${realm}_user_complete_info.CLASS AS USER_GROUP,
+    yr_${realm}_user_complete_info.NAME_FIRST,
+    yr_${realm}_user_complete_info.NAME_LAST,
     sap_raw_${realm}_ust04.PROFILE
-    FROM 
+    FROM
     yr_${realm}_user_complete_info
-    INNER JOIN 
+    INNER JOIN
     sap_raw_${realm}_ust04 ON sap_raw_${realm}_ust04.BNAME = yr_${realm}_user_complete_info.BNAME
-    WHERE 
+    WHERE
     (sap_raw_${realm}_ust04.PROFILE = 'SAP_ALL' OR sap_raw_${realm}_ust04.PROFILE = 'SAP_NEW')
     AND yr_${realm}_user_complete_info.USER_VALID = 1
         `);
 
-        return { 
-          success: true, 
-          message: 'USER02 report executed successfully', 
+        return {
+          success: true,
+          message: 'USER02 report executed successfully',
           reportType: 'USER02',
           deltaProjectDate,
           tableName: `yreport_${realm}_USER02`
         };
       }
-      
+
                   case 'USER03': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_user03"`);
         await client.query(`
-    CREATE TABLE yreport_${realm}_user03 AS 
+    CREATE TABLE yreport_${realm}_user03 AS
     SELECT
-    yr_${realm}_user_complete_info.BNAME as USERID, 
-    yr_${realm}_user_complete_info.GLTGV as DATE_FROM, 
-    yr_${realm}_user_complete_info.GLTGB as DATE_TO, 
-    yr_${realm}_user_complete_info.ERDAT as CREATED, 
-    yr_${realm}_user_complete_info.TRDAT as LAST_LOGON, 
-    yr_${realm}_user_complete_info.USTYP, 
-    yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-    yr_${realm}_user_complete_info.NAME_FIRST, 
-    yr_${realm}_user_complete_info.NAME_LAST, 
-    sap_raw_${realm}_ust04.PROFILE 
-    FROM 
-    yr_${realm}_user_complete_info 
-    INNER JOIN sap_raw_${realm}_ust04 ON sap_raw_${realm}_ust04.BNAME = yr_${realm}_user_complete_info.BNAME 
-    LEFT JOIN sap_raw_${realm}_agr_1016 ON sap_raw_${realm}_agr_1016.PROFILE = sap_raw_${realm}_ust04.PROFILE 
-    LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.AGR_NAME = sap_raw_${realm}_agr_1016.AGR_NAME 
-    AND sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME 
-    where 
+    yr_${realm}_user_complete_info.BNAME as USERID,
+    yr_${realm}_user_complete_info.GLTGV as DATE_FROM,
+    yr_${realm}_user_complete_info.GLTGB as DATE_TO,
+    yr_${realm}_user_complete_info.ERDAT as CREATED,
+    yr_${realm}_user_complete_info.TRDAT as LAST_LOGON,
+    yr_${realm}_user_complete_info.USTYP,
+    yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+    yr_${realm}_user_complete_info.NAME_FIRST,
+    yr_${realm}_user_complete_info.NAME_LAST,
+    sap_raw_${realm}_ust04.PROFILE
+    FROM
+    yr_${realm}_user_complete_info
+    INNER JOIN sap_raw_${realm}_ust04 ON sap_raw_${realm}_ust04.BNAME = yr_${realm}_user_complete_info.BNAME
+    LEFT JOIN sap_raw_${realm}_agr_1016 ON sap_raw_${realm}_agr_1016.PROFILE = sap_raw_${realm}_ust04.PROFILE
+    LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.AGR_NAME = sap_raw_${realm}_agr_1016.AGR_NAME
+    AND sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME
+    where
     sap_raw_${realm}_agr_users.AGR_NAME is null and yr_${realm}_user_complete_info.USER_VALID = 1
         `);
 
-        return { 
-          success: true, 
-          message: 'USER03 report executed successfully', 
+        return {
+          success: true,
+          message: 'USER03 report executed successfully',
           reportType: 'USER03',
           deltaProjectDate,
           tableName: `yreport_${realm}_user03`
         };
       }
-      
+
       case 'USER04': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_user04"`);
         await client.query(`
-    CREATE TABLE yreport_${realm}_user04 AS 
+    CREATE TABLE yreport_${realm}_user04 AS
     SELECT
-    yr_${realm}_user_complete_info.BNAME as USERID, 
-    yr_${realm}_user_complete_info.NAME_FIRST, 
-    yr_${realm}_user_complete_info.NAME_LAST, 
-    yr_${realm}_user_complete_info.GLTGV as DATE_FROM, 
-    yr_${realm}_user_complete_info.GLTGB as DATE_TO, 
-    yr_${realm}_user_complete_info.ERDAT as CREATED, 
-    yr_${realm}_user_complete_info.TRDAT as LAST_LOGON, 
-    yr_${realm}_user_complete_info.UFLAG as LOCK_CODE, 
-    yr_${realm}_user_complete_info.USTYP, 
-    yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-    yr_${realm}_user_complete_info.PERSNUMBER, 
-    yr_${realm}_user_complete_info.NICKNAME, 
-    yr_${realm}_user_complete_info.SORT1, 
-    yr_${realm}_user_complete_info.SORT2, 
-    yr_${realm}_user_complete_info.SMTP_ADDR as MAIL_ADDRESS, 
-    yr_${realm}_user_complete_info.DEPARTMENT, 
-    yr_${realm}_user_complete_info.function_col as "sapfunction", 
-    yr_${realm}_user_complete_info.USER_VALID 
-    FROM 
+    yr_${realm}_user_complete_info.BNAME as USERID,
+    yr_${realm}_user_complete_info.NAME_FIRST,
+    yr_${realm}_user_complete_info.NAME_LAST,
+    yr_${realm}_user_complete_info.GLTGV as DATE_FROM,
+    yr_${realm}_user_complete_info.GLTGB as DATE_TO,
+    yr_${realm}_user_complete_info.ERDAT as CREATED,
+    yr_${realm}_user_complete_info.TRDAT as LAST_LOGON,
+    yr_${realm}_user_complete_info.UFLAG as LOCK_CODE,
+    yr_${realm}_user_complete_info.USTYP,
+    yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+    yr_${realm}_user_complete_info.PERSNUMBER,
+    yr_${realm}_user_complete_info.NICKNAME,
+    yr_${realm}_user_complete_info.SORT1,
+    yr_${realm}_user_complete_info.SORT2,
+    yr_${realm}_user_complete_info.SMTP_ADDR as MAIL_ADDRESS,
+    yr_${realm}_user_complete_info.DEPARTMENT,
+    yr_${realm}_user_complete_info.function_col as "sapfunction",
+    yr_${realm}_user_complete_info.USER_VALID
+    FROM
     yr_${realm}_user_complete_info
         `);
 
-        return { 
-          success: true, 
-          message: 'USER04 report executed successfully', 
+        return {
+          success: true,
+          message: 'USER04 report executed successfully',
           reportType: 'USER04',
           deltaProjectDate,
           tableName: `yreport_${realm}_user04`
         };
       }
-      
+
       case 'ROLE01': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role01"`);
-        
+
         if (pattern && pattern.trim() !== '') {
           // With WHERE clause using pattern
           await client.query(`
-CREATE TABLE "yreport_${realm}_role01" AS 
-SELECT 
-sap_raw_${realm}_agr_flags.AGR_NAME, 
-yr_${realm}_roles_descriptions.TEXT AS COMP_DESCR, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR, 
-yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCR, 
-yr_${realm}_role_stcode_exploded.TCODETOTAL, 
-yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION 
-FROM 
-sap_raw_${realm}_agr_flags 
-LEFT JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME 
-LEFT JOIN yr_${realm}_role_stcode_exploded ON yr_${realm}_role_stcode_exploded.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME 
-LEFT JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_role_stcode_exploded.TCODETOTAL 
-WHERE 
-sap_raw_${realm}_agr_flags.FLAG_TYPE = 'COLL_AGR' AND 
+CREATE TABLE "yreport_${realm}_role01" AS
+SELECT
+sap_raw_${realm}_agr_flags.AGR_NAME,
+yr_${realm}_roles_descriptions.TEXT AS COMP_DESCR,
+sap_raw_${realm}_agr_agrs.CHILD_AGR,
+yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCR,
+yr_${realm}_role_stcode_exploded.TCODETOTAL,
+yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION
+FROM
+sap_raw_${realm}_agr_flags
+LEFT JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME
+LEFT JOIN yr_${realm}_role_stcode_exploded ON yr_${realm}_role_stcode_exploded.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME
+LEFT JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_role_stcode_exploded.TCODETOTAL
+WHERE
+sap_raw_${realm}_agr_flags.FLAG_TYPE = 'COLL_AGR' AND
 sap_raw_${realm}_agr_flags.FLAG_VALUE = 'X' AND
 sap_raw_${realm}_agr_flags.AGR_NAME like $1
           `, [pattern]);
         } else {
           // No WHERE clause - select all
           await client.query(`
-CREATE TABLE "yreport_${realm}_role01" AS 
-SELECT 
-sap_raw_${realm}_agr_flags.AGR_NAME, 
-yr_${realm}_roles_descriptions.TEXT AS COMP_DESCR, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR, 
-yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCR, 
-yr_${realm}_role_stcode_exploded.TCODETOTAL, 
-yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION 
-FROM 
-sap_raw_${realm}_agr_flags 
-LEFT JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME 
-LEFT JOIN yr_${realm}_role_stcode_exploded ON yr_${realm}_role_stcode_exploded.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME 
-LEFT JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_role_stcode_exploded.TCODETOTAL 
-WHERE 
-sap_raw_${realm}_agr_flags.FLAG_TYPE = 'COLL_AGR' AND 
+CREATE TABLE "yreport_${realm}_role01" AS
+SELECT
+sap_raw_${realm}_agr_flags.AGR_NAME,
+yr_${realm}_roles_descriptions.TEXT AS COMP_DESCR,
+sap_raw_${realm}_agr_agrs.CHILD_AGR,
+yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCR,
+yr_${realm}_role_stcode_exploded.TCODETOTAL,
+yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION
+FROM
+sap_raw_${realm}_agr_flags
+LEFT JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME
+LEFT JOIN yr_${realm}_role_stcode_exploded ON yr_${realm}_role_stcode_exploded.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_flags.AGR_NAME
+LEFT JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_role_stcode_exploded.TCODETOTAL
+WHERE
+sap_raw_${realm}_agr_flags.FLAG_TYPE = 'COLL_AGR' AND
 sap_raw_${realm}_agr_flags.FLAG_VALUE = 'X'
           `);
         }
-        
-        return { 
-          success: true, 
-          message: 'ROLE01 report executed successfully', 
+
+        return {
+          success: true,
+          message: 'ROLE01 report executed successfully',
           reportType: 'ROLE01',
           tableName: `yreport_${realm}_role01`,
           pattern: pattern || '(all)'
         };
       }
-      
+
       case 'ROLE02': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role02"`);
-        
+
         if (pattern && pattern.trim() !== '') {
           // With WHERE clause using pattern
           //end option was: [`%${pattern}%`]
           await client.query(`
-CREATE TABLE "yreport_${realm}_role02" AS 
-SELECT 
- sap_raw_${realm}_agr_tcodes.AGR_NAME, 
- yr_${realm}_roles_descriptions.TEXT, 
- sap_raw_${realm}_agr_tcodes.TCODE, 
- yr_${realm}_tcodes_description.TTEXT 
- FROM 
- sap_raw_${realm}_agr_tcodes 
- LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_tcodes.AGR_NAME 
+CREATE TABLE "yreport_${realm}_role02" AS
+SELECT
+ sap_raw_${realm}_agr_tcodes.AGR_NAME,
+ yr_${realm}_roles_descriptions.TEXT,
+ sap_raw_${realm}_agr_tcodes.TCODE,
+ yr_${realm}_tcodes_description.TTEXT
+ FROM
+ sap_raw_${realm}_agr_tcodes
+ LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_tcodes.AGR_NAME
  LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = sap_raw_${realm}_agr_tcodes.TCODE
  WHERE sap_raw_${realm}_agr_tcodes.AGR_NAME like $1
           `, [pattern]);
         } else {
           // No WHERE clause - select all
           await client.query(`
-CREATE TABLE "yreport_${realm}_role02" AS 
-SELECT 
- sap_raw_${realm}_agr_tcodes.AGR_NAME, 
- yr_${realm}_roles_descriptions.TEXT, 
- sap_raw_${realm}_agr_tcodes.TCODE, 
- yr_${realm}_tcodes_description.TTEXT 
- FROM 
- sap_raw_${realm}_agr_tcodes 
- LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_tcodes.AGR_NAME 
+CREATE TABLE "yreport_${realm}_role02" AS
+SELECT
+ sap_raw_${realm}_agr_tcodes.AGR_NAME,
+ yr_${realm}_roles_descriptions.TEXT,
+ sap_raw_${realm}_agr_tcodes.TCODE,
+ yr_${realm}_tcodes_description.TTEXT
+ FROM
+ sap_raw_${realm}_agr_tcodes
+ LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = sap_raw_${realm}_agr_tcodes.AGR_NAME
  LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = sap_raw_${realm}_agr_tcodes.TCODE
           `);
         }
-        
-        return { 
-          success: true, 
-          message: 'ROLE02 report executed successfully', 
+
+        return {
+          success: true,
+          message: 'ROLE02 report executed successfully',
           reportType: 'ROLE02',
           tableName: `yreport_${realm}_role02`,
           pattern: pattern || '(all)'
@@ -2631,26 +2722,26 @@ SELECT
             case 'ROLE03': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role03"`);
         await client.query(`
-    CREATE TABLE yreport_${realm}_role03 AS 
-SELECT 
-sap_raw_${realm}_agr_1251.AGR_NAME, 
-sap_raw_${realm}_agr_1251.OBJECT, 
-sap_raw_${realm}_agr_1251.AUTH, 
-sap_raw_${realm}_agr_1251.FIELD, 
-sap_raw_${realm}_usorg_db.VTEXT as DESCRIPTION, 
-sap_raw_${realm}_agr_1251.LOW 
-FROM 
-sap_raw_${realm}_agr_1251 
-INNER JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.FIELD = sap_raw_${realm}_agr_1251.FIELD 
-WHERE 
-sap_raw_${realm}_agr_1251.DELETED is null AND 
-SUBSTRING(sap_raw_${realm}_agr_1251.LOW, 1, 1) <> '$' AND 
+    CREATE TABLE yreport_${realm}_role03 AS
+SELECT
+sap_raw_${realm}_agr_1251.AGR_NAME,
+sap_raw_${realm}_agr_1251.OBJECT,
+sap_raw_${realm}_agr_1251.AUTH,
+sap_raw_${realm}_agr_1251.FIELD,
+sap_raw_${realm}_usorg_db.VTEXT as DESCRIPTION,
+sap_raw_${realm}_agr_1251.LOW
+FROM
+sap_raw_${realm}_agr_1251
+INNER JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.FIELD = sap_raw_${realm}_agr_1251.FIELD
+WHERE
+sap_raw_${realm}_agr_1251.DELETED is null AND
+SUBSTRING(sap_raw_${realm}_agr_1251.LOW, 1, 1) <> '$' AND
 sap_raw_${realm}_usorg_db.LANGU = 'E'
         `);
 
-        return { 
-          success: true, 
-          message: 'ROLE03 report executed successfully', 
+        return {
+          success: true,
+          message: 'ROLE03 report executed successfully',
           reportType: 'ROLE03',
           tableName: `yreport_${realm}_role03`
         };
@@ -2658,82 +2749,82 @@ sap_raw_${realm}_usorg_db.LANGU = 'E'
       //a subquery would be needed here for the org level description. If a custom one is created without a description, it will not show up.
             case 'ROLE04': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role04"`);
-        
+
         if (pattern && pattern.trim() !== '') {
           // With WHERE clause using pattern
           //ho modificato l'opzione in fondo, era: [`%${pattern}%`]
           await client.query(`
-CREATE TABLE "yreport_${realm}_role04" AS 
-SELECT 
-sap_raw_${realm}_agr_agrs.AGR_NAME as ROLE_COMPOSITE, 
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR as ROLE_SINGLE, 
-yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCRIPTION, 
-sap_raw_${realm}_agr_1252.VARBL as ORG_LEVEL, 
-sap_raw_${realm}_usorg_db.VTEXT as ORG_LEVEL_DESCRIPTION, 
-sap_raw_${realm}_agr_1252.LOW as VALUE_FROM, 
-sap_raw_${realm}_agr_1252.HIGH as VALUE_TO 
-FROM 
-sap_raw_${realm}_agr_define 
-INNER JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_define.AGR_NAME 
-INNER JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = 
-sap_raw_${realm}_agr_agrs.AGR_NAME 
-INNER JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = 
-sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN sap_raw_${realm}_agr_1252 ON sap_raw_${realm}_agr_1252.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.VARBL = sap_raw_${realm}_agr_1252.VARBL 
-where 
+CREATE TABLE "yreport_${realm}_role04" AS
+SELECT
+sap_raw_${realm}_agr_agrs.AGR_NAME as ROLE_COMPOSITE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_agrs.CHILD_AGR as ROLE_SINGLE,
+yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_1252.VARBL as ORG_LEVEL,
+sap_raw_${realm}_usorg_db.VTEXT as ORG_LEVEL_DESCRIPTION,
+sap_raw_${realm}_agr_1252.LOW as VALUE_FROM,
+sap_raw_${realm}_agr_1252.HIGH as VALUE_TO
+FROM
+sap_raw_${realm}_agr_define
+INNER JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_define.AGR_NAME
+INNER JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME =
+sap_raw_${realm}_agr_agrs.AGR_NAME
+INNER JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME =
+sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN sap_raw_${realm}_agr_1252 ON sap_raw_${realm}_agr_1252.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.VARBL = sap_raw_${realm}_agr_1252.VARBL
+where
 sap_raw_${realm}_usorg_db.LANGU = $1 AND
 sap_raw_${realm}_agr_agrs.AGR_NAME like $2
-group by 
-sap_raw_${realm}_agr_agrs.AGR_NAME, 
-yr_${realm}_roles_descriptions1.TEXT, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR, 
-yr_${realm}_roles_descriptions.TEXT, 
-sap_raw_${realm}_agr_1252.VARBL, 
-sap_raw_${realm}_agr_1252.LOW, 
-sap_raw_${realm}_agr_1252.HIGH, 
+group by
+sap_raw_${realm}_agr_agrs.AGR_NAME,
+yr_${realm}_roles_descriptions1.TEXT,
+sap_raw_${realm}_agr_agrs.CHILD_AGR,
+yr_${realm}_roles_descriptions.TEXT,
+sap_raw_${realm}_agr_1252.VARBL,
+sap_raw_${realm}_agr_1252.LOW,
+sap_raw_${realm}_agr_1252.HIGH,
 sap_raw_${realm}_usorg_db.VTEXT
           `, [fistCharProjectLang, pattern]);
         } else {
           // No WHERE clause - select all
           await client.query(`
-CREATE TABLE "yreport_${realm}_role04" AS 
-SELECT 
-sap_raw_${realm}_agr_agrs.AGR_NAME as ROLE_COMPOSITE, 
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR as ROLE_SINGLE, 
-yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCRIPTION, 
-sap_raw_${realm}_agr_1252.VARBL as ORG_LEVEL, 
-sap_raw_${realm}_usorg_db.VTEXT as ORG_LEVEL_DESCRIPTION, 
-sap_raw_${realm}_agr_1252.LOW as VALUE_FROM, 
-sap_raw_${realm}_agr_1252.HIGH as VALUE_TO 
-FROM 
-sap_raw_${realm}_agr_define 
-INNER JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_define.AGR_NAME 
-INNER JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = 
-sap_raw_${realm}_agr_agrs.AGR_NAME 
-INNER JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME = 
-sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN sap_raw_${realm}_agr_1252 ON sap_raw_${realm}_agr_1252.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR 
-LEFT JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.VARBL = sap_raw_${realm}_agr_1252.VARBL 
-where 
+CREATE TABLE "yreport_${realm}_role04" AS
+SELECT
+sap_raw_${realm}_agr_agrs.AGR_NAME as ROLE_COMPOSITE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_agrs.CHILD_AGR as ROLE_SINGLE,
+yr_${realm}_roles_descriptions1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_1252.VARBL as ORG_LEVEL,
+sap_raw_${realm}_usorg_db.VTEXT as ORG_LEVEL_DESCRIPTION,
+sap_raw_${realm}_agr_1252.LOW as VALUE_FROM,
+sap_raw_${realm}_agr_1252.HIGH as VALUE_TO
+FROM
+sap_raw_${realm}_agr_define
+INNER JOIN sap_raw_${realm}_agr_agrs ON sap_raw_${realm}_agr_agrs.AGR_NAME = sap_raw_${realm}_agr_define.AGR_NAME
+INNER JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME =
+sap_raw_${realm}_agr_agrs.AGR_NAME
+INNER JOIN yr_${realm}_roles_descriptions yr_${realm}_roles_descriptions1 ON yr_${realm}_roles_descriptions1.AGR_NAME =
+sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN sap_raw_${realm}_agr_1252 ON sap_raw_${realm}_agr_1252.AGR_NAME = sap_raw_${realm}_agr_agrs.CHILD_AGR
+LEFT JOIN sap_raw_${realm}_usorg_db ON sap_raw_${realm}_usorg_db.VARBL = sap_raw_${realm}_agr_1252.VARBL
+where
 sap_raw_${realm}_usorg_db.LANGU = $1 AND
-group by 
-sap_raw_${realm}_agr_agrs.AGR_NAME, 
-yr_${realm}_roles_descriptions1.TEXT, 
-sap_raw_${realm}_agr_agrs.CHILD_AGR, 
-yr_${realm}_roles_descriptions.TEXT, 
-sap_raw_${realm}_agr_1252.VARBL, 
-sap_raw_${realm}_agr_1252.LOW, 
-sap_raw_${realm}_agr_1252.HIGH, 
+group by
+sap_raw_${realm}_agr_agrs.AGR_NAME,
+yr_${realm}_roles_descriptions1.TEXT,
+sap_raw_${realm}_agr_agrs.CHILD_AGR,
+yr_${realm}_roles_descriptions.TEXT,
+sap_raw_${realm}_agr_1252.VARBL,
+sap_raw_${realm}_agr_1252.LOW,
+sap_raw_${realm}_agr_1252.HIGH,
 sap_raw_${realm}_usorg_db.VTEXT
           `, [fistCharProjectLang]);
         }
-        
-        return { 
-          success: true, 
-          message: 'ROLE04 report executed successfully', 
+
+        return {
+          success: true,
+          message: 'ROLE04 report executed successfully',
           reportType: 'ROLE04',
           tableName: `yreport_${realm}_role04`,
           pattern: pattern || '(all)'
@@ -2742,27 +2833,27 @@ sap_raw_${realm}_usorg_db.VTEXT
       case 'ROLE05': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role05"`);
         await client.query(`
-    CREATE TABLE yreport_${realm}_role05 AS 
-SELECT 
-sap_raw_${realm}_agr_1251.AGR_NAME, 
-yr_${realm}_roles_descriptions.TEXT as AGR_DESCRIPTION, 
-sap_raw_${realm}_agr_1251.OBJECT, 
-sap_raw_${realm}_agr_1251.AUTH, 
-sap_raw_${realm}_agr_1251.LOW, 
-sap_raw_${realm}_agr_1251.HIGH 
-FROM 
-sap_raw_${realm}_agr_1251 
-LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME = 
-sap_raw_${realm}_agr_1251.AGR_NAME 
-where 
-sap_raw_${realm}_agr_1251.OBJECT = 'S_TCODE' AND 
-(sap_raw_${realm}_agr_1251.LOW = '*' OR sap_raw_${realm}_agr_1251.HIGH is not null OR sap_raw_${realm}_agr_1251.LOW like '%*%' or sap_raw_${realm}_agr_1251.HIGH like '%*%') AND 
+    CREATE TABLE yreport_${realm}_role05 AS
+SELECT
+sap_raw_${realm}_agr_1251.AGR_NAME,
+yr_${realm}_roles_descriptions.TEXT as AGR_DESCRIPTION,
+sap_raw_${realm}_agr_1251.OBJECT,
+sap_raw_${realm}_agr_1251.AUTH,
+sap_raw_${realm}_agr_1251.LOW,
+sap_raw_${realm}_agr_1251.HIGH
+FROM
+sap_raw_${realm}_agr_1251
+LEFT JOIN yr_${realm}_roles_descriptions ON yr_${realm}_roles_descriptions.AGR_NAME =
+sap_raw_${realm}_agr_1251.AGR_NAME
+where
+sap_raw_${realm}_agr_1251.OBJECT = 'S_TCODE' AND
+(sap_raw_${realm}_agr_1251.LOW = '*' OR sap_raw_${realm}_agr_1251.HIGH is not null OR sap_raw_${realm}_agr_1251.LOW like '%*%' or sap_raw_${realm}_agr_1251.HIGH like '%*%') AND
 (sap_raw_${realm}_agr_1251.DELETED <> 'X' or sap_raw_${realm}_agr_1251.DELETED is null)
         `);
 
-        return { 
-          success: true, 
-          message: 'ROLE05 report executed successfully', 
+        return {
+          success: true,
+          message: 'ROLE05 report executed successfully',
           reportType: 'ROLE05',
           tableName: `yreport_${realm}_role05`
         };
@@ -2771,108 +2862,108 @@ sap_raw_${realm}_agr_1251.OBJECT = 'S_TCODE' AND
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role06"`);
         await client.query(`
           CREATE TABLE "yreport_${realm}_role06" AS
-SELECT 
-yr_${realm}_user_complete_info.BNAME as USERID, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-yr_${realm}_user_complete_info.USTYP, 
-yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-yr_${realm}_user_complete_info.USER_VALID, 
-sap_raw_${realm}_agr_users.AGR_NAME, 
-yr_${realm}_roles_infos.TEXT as AGR_DESCRIPTION, 
-sap_raw_${realm}_agr_users.FROM_DAT, 
-sap_raw_${realm}_agr_users.TO_DAT, 
-sap_raw_${realm}_agr_users.ORG_FLAG, 
-sap_raw_${realm}_agr_users.COL_FLAG, 
-yr_${realm}_roles_infos.ROLE_TYPE,  
-CASE 
-WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1 
-AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null) 
-THEN 1 
-ELSE 0 
+SELECT
+yr_${realm}_user_complete_info.BNAME as USERID,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+yr_${realm}_user_complete_info.USTYP,
+yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+yr_${realm}_user_complete_info.USER_VALID,
+sap_raw_${realm}_agr_users.AGR_NAME,
+yr_${realm}_roles_infos.TEXT as AGR_DESCRIPTION,
+sap_raw_${realm}_agr_users.FROM_DAT,
+sap_raw_${realm}_agr_users.TO_DAT,
+sap_raw_${realm}_agr_users.ORG_FLAG,
+sap_raw_${realm}_agr_users.COL_FLAG,
+yr_${realm}_roles_infos.ROLE_TYPE,
+CASE
+WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1
+AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null)
+THEN 1
+ELSE 0
 END as ROLE_VALID
-FROM 
-yr_${realm}_user_complete_info 
-LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME 
+FROM
+yr_${realm}_user_complete_info
+LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME
 LEFT JOIN yr_${realm}_roles_infos ON yr_${realm}_roles_infos.AGR_NAME = sap_raw_${realm}_agr_users.AGR_NAME
         `, [sProjectDate]);
 
-        return { 
-          success: true, 
-          message: 'ROLE06 report executed successfully', 
+        return {
+          success: true,
+          message: 'ROLE06 report executed successfully',
           reportType: 'ROLE06',
           tableName: `yreport_${realm}_role06`
         };
       }
             case 'ROLE07': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role07"`);
-        
+
         if (pattern && pattern.trim() !== '') {
           // With WHERE clause using pattern
           //ho modificato l'opzione in fondo, era: [`%${pattern}%`]
           await client.query(`
-CREATE TABLE "yreport_${realm}_role07" AS 
-SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,  
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,  
-sap_raw_${realm}_agr_agrs.CHILD_AGR as SINGLE_ROLE,  
-yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,  
-sap_raw_${realm}_agr_tcodes.TCODE,  
-yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION  
- FROM sap_raw_${realm}_agr_agrs INNER JOIN  
-yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN  
-yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_tcodes.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN  
-yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE 
+CREATE TABLE "yreport_${realm}_role07" AS
+SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_agrs.CHILD_AGR as SINGLE_ROLE,
+yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_tcodes.TCODE,
+yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION
+ FROM sap_raw_${realm}_agr_agrs INNER JOIN
+yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN
+yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_tcodes.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN
+yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE
  WHERE sap_raw_${realm}_agr_agrs.AGR_NAME like $1
-UNION  
-SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,  
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,  
-sap_raw_${realm}_agr_define.AGR_NAME as SINGLE_ROLE,  
-yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,  
-sap_raw_${realm}_agr_tcodes.TCODE,  
-yr_${realm}_tcodes_description.TTEXT  as TCODE_DESCRIPTION  
-FROM sap_raw_${realm}_agr_agrs INNER JOIN  
-yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_define ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_define.AGR_NAME INNER JOIN  
-yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_define.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_define.PARENT_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN  
+UNION
+SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_define.AGR_NAME as SINGLE_ROLE,
+yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_tcodes.TCODE,
+yr_${realm}_tcodes_description.TTEXT  as TCODE_DESCRIPTION
+FROM sap_raw_${realm}_agr_agrs INNER JOIN
+yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_define ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_define.AGR_NAME INNER JOIN
+yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_define.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_define.PARENT_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN
 yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE
 WHERE sap_raw_${realm}_agr_agrs.AGR_NAME like $1
           `, [pattern]);
         } else {
           // No WHERE clause - select all
           await client.query(`
-CREATE TABLE "yreport_${realm}_role07" AS 
-SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,  
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,  
-sap_raw_${realm}_agr_agrs.CHILD_AGR as SINGLE_ROLE,  
-yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,  
-sap_raw_${realm}_agr_tcodes.TCODE,  
-yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION  
- FROM sap_raw_${realm}_agr_agrs INNER JOIN  
-yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN  
-yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_tcodes.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN  
-yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE 
-UNION  
-SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,  
-yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,  
-sap_raw_${realm}_agr_define.AGR_NAME as SINGLE_ROLE,  
-yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,  
-sap_raw_${realm}_agr_tcodes.TCODE,  
-yr_${realm}_tcodes_description.TTEXT  as TCODE_DESCRIPTION  
-FROM sap_raw_${realm}_agr_agrs INNER JOIN  
-yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_define ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_define.AGR_NAME INNER JOIN  
-yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_define.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN  
-sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_define.PARENT_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN  
+CREATE TABLE "yreport_${realm}_role07" AS
+SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_agrs.CHILD_AGR as SINGLE_ROLE,
+yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_tcodes.TCODE,
+yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION
+ FROM sap_raw_${realm}_agr_agrs INNER JOIN
+yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN
+yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_tcodes.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN
+yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE
+UNION
+SELECT sap_raw_${realm}_agr_agrs.AGR_NAME as COMPOSITE_ROLE,
+yr_${realm}_roles_descriptions.TEXT as COMPOSITE_DESCRIPTION,
+sap_raw_${realm}_agr_define.AGR_NAME as SINGLE_ROLE,
+yr_${realm}_roles_descriptions_1.TEXT AS SINGLE_DESCRIPTION,
+sap_raw_${realm}_agr_tcodes.TCODE,
+yr_${realm}_tcodes_description.TTEXT  as TCODE_DESCRIPTION
+FROM sap_raw_${realm}_agr_agrs INNER JOIN
+yr_${realm}_roles_descriptions ON sap_raw_${realm}_agr_agrs.AGR_NAME = yr_${realm}_roles_descriptions.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_define ON sap_raw_${realm}_agr_agrs.CHILD_AGR = sap_raw_${realm}_agr_define.AGR_NAME INNER JOIN
+yr_${realm}_roles_descriptions AS yr_${realm}_roles_descriptions_1 ON sap_raw_${realm}_agr_define.AGR_NAME = yr_${realm}_roles_descriptions_1.AGR_NAME INNER JOIN
+sap_raw_${realm}_agr_tcodes ON sap_raw_${realm}_agr_define.PARENT_AGR = sap_raw_${realm}_agr_tcodes.AGR_NAME INNER JOIN
 yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm}_tcodes_description.TCODE
           `);
         }
-        
-        return { 
-          success: true, 
-          message: 'ROLE07 report executed successfully', 
+
+        return {
+          success: true,
+          message: 'ROLE07 report executed successfully',
           reportType: 'ROLE07',
           tableName: `yreport_${realm}_role07`,
           pattern: pattern || '(all)'
@@ -2882,149 +2973,149 @@ yr_${realm}_tcodes_description ON sap_raw_${realm}_agr_tcodes.TCODE = yr_${realm
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_role08"`);
         await client.query(`
           CREATE TABLE "yreport_${realm}_role08" AS
-SELECT 
-yr_${realm}_user_complete_info.BNAME as USERID, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-yr_${realm}_user_complete_info.USTYP, 
-yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-yr_${realm}_user_complete_info.USER_VALID, 
-sap_raw_${realm}_agr_agrs.child_agr as role, 
-yr_${realm}_roles_infos.TEXT as roledescription, 
-sap_raw_${realm}_agr_users.FROM_DAT, 
-sap_raw_${realm}_agr_users.TO_DAT, 
-sap_raw_${realm}_agr_users.ORG_FLAG, 
-'X' as COL_FLAG, 
+SELECT
+yr_${realm}_user_complete_info.BNAME as USERID,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+yr_${realm}_user_complete_info.USTYP,
+yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+yr_${realm}_user_complete_info.USER_VALID,
+sap_raw_${realm}_agr_agrs.child_agr as role,
+yr_${realm}_roles_infos.TEXT as roledescription,
+sap_raw_${realm}_agr_users.FROM_DAT,
+sap_raw_${realm}_agr_users.TO_DAT,
+sap_raw_${realm}_agr_users.ORG_FLAG,
+'X' as COL_FLAG,
 yr_${realm}_roles_infos.ROLE_TYPE,
 sap_raw_${realm}_agr_agrs.agr_name as rolesource,
-CASE 
-WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1 
-AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null) 
-THEN 1 
-ELSE 0 
+CASE
+WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1
+AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null)
+THEN 1
+ELSE 0
 END as ROLE_VALID
-FROM 
-yr_${realm}_user_complete_info 
-LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME  
+FROM
+yr_${realm}_user_complete_info
+LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME
 join sap_raw_${realm}_agr_agrs on sap_raw_${realm}_agr_users.AGR_NAME = sap_raw_${realm}_agr_agrs.agr_name
 JOIN yr_${realm}_roles_infos ON yr_${realm}_roles_infos.AGR_NAME = sap_raw_${realm}_agr_agrs.child_agr
 union
-SELECT 
-yr_${realm}_user_complete_info.BNAME as USERID, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-yr_${realm}_user_complete_info.USTYP, 
-yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-yr_${realm}_user_complete_info.USER_VALID, 
-sap_raw_${realm}_agr_users.AGR_NAME as role, 
-yr_${realm}_roles_infos.TEXT as roledescription, 
-sap_raw_${realm}_agr_users.FROM_DAT, 
-sap_raw_${realm}_agr_users.TO_DAT, 
-sap_raw_${realm}_agr_users.ORG_FLAG, 
-sap_raw_${realm}_agr_users.COL_FLAG, 
+SELECT
+yr_${realm}_user_complete_info.BNAME as USERID,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+yr_${realm}_user_complete_info.USTYP,
+yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+yr_${realm}_user_complete_info.USER_VALID,
+sap_raw_${realm}_agr_users.AGR_NAME as role,
+yr_${realm}_roles_infos.TEXT as roledescription,
+sap_raw_${realm}_agr_users.FROM_DAT,
+sap_raw_${realm}_agr_users.TO_DAT,
+sap_raw_${realm}_agr_users.ORG_FLAG,
+sap_raw_${realm}_agr_users.COL_FLAG,
 yr_${realm}_roles_infos.ROLE_TYPE,
 NULL as rolesource,
-CASE 
-WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1 
-AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null) 
-THEN 1 
-ELSE 0 
+CASE
+WHEN sap_raw_${realm}_agr_users.FROM_DAT <= $1
+AND (sap_raw_${realm}_agr_users.TO_DAT >= $1 or sap_raw_${realm}_agr_users.TO_DAT is null)
+THEN 1
+ELSE 0
 END as ROLE_VALID
-FROM 
-yr_${realm}_user_complete_info 
-LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME 
+FROM
+yr_${realm}_user_complete_info
+LEFT JOIN sap_raw_${realm}_agr_users ON sap_raw_${realm}_agr_users.UNAME = yr_${realm}_user_complete_info.BNAME
 LEFT JOIN yr_${realm}_roles_infos ON yr_${realm}_roles_infos.AGR_NAME = sap_raw_${realm}_agr_users.AGR_NAME
 where sap_raw_${realm}_agr_users.col_flag is null
         `, [sProjectDate]);
 
-        return { 
-          success: true, 
-          message: 'ROLE08 report executed successfully', 
+        return {
+          success: true,
+          message: 'ROLE08 report executed successfully',
           reportType: 'ROLE08',
           tableName: `yreport_${realm}_role08`
         };
       }
-      
+
       case 'STAT01': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_stat01"`);
         await client.query(`
           CREATE TABLE "yreport_${realm}_stat01" AS
-SELECT 
-yr_${realm}_statistic_slim.ACCOUNT as USERID, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-yr_${realm}_user_complete_info.function_col, 
-yr_${realm}_user_complete_info.DEPARTMENT, 
-yr_${realm}_user_complete_info.CLASS as USER_GROUP, 
-yr_${realm}_statistic_slim.action as TCODE, 
-yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION, 
-yr_${realm}_statistic_slim.nexec 
-FROM 
-yr_${realm}_statistic_slim 
-LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_statistic_slim.action 
-LEFT JOIN yr_${realm}_user_complete_info ON yr_${realm}_user_complete_info.BNAME = 
-yr_${realm}_statistic_slim.ACCOUNT 
-WHERE 
-yr_${realm}_statistic_slim.actiontype = 'T' 
-GROUP BY 
-yr_${realm}_statistic_slim.ACCOUNT, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-yr_${realm}_user_complete_info.function_col, 
-yr_${realm}_user_complete_info.DEPARTMENT, 
-yr_${realm}_user_complete_info.CLASS, 
-yr_${realm}_statistic_slim.action, 
-yr_${realm}_tcodes_description.TTEXT, 
+SELECT
+yr_${realm}_statistic_slim.ACCOUNT as USERID,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+yr_${realm}_user_complete_info.function_col,
+yr_${realm}_user_complete_info.DEPARTMENT,
+yr_${realm}_user_complete_info.CLASS as USER_GROUP,
+yr_${realm}_statistic_slim.action as TCODE,
+yr_${realm}_tcodes_description.TTEXT AS TCODE_DESCRIPTION,
+yr_${realm}_statistic_slim.nexec
+FROM
+yr_${realm}_statistic_slim
+LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = yr_${realm}_statistic_slim.action
+LEFT JOIN yr_${realm}_user_complete_info ON yr_${realm}_user_complete_info.BNAME =
+yr_${realm}_statistic_slim.ACCOUNT
+WHERE
+yr_${realm}_statistic_slim.actiontype = 'T'
+GROUP BY
+yr_${realm}_statistic_slim.ACCOUNT,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+yr_${realm}_user_complete_info.function_col,
+yr_${realm}_user_complete_info.DEPARTMENT,
+yr_${realm}_user_complete_info.CLASS,
+yr_${realm}_statistic_slim.action,
+yr_${realm}_tcodes_description.TTEXT,
 yr_${realm}_statistic_slim.nexec
         `);
 
-        return { 
-          success: true, 
-          message: 'STAT01 report executed successfully', 
+        return {
+          success: true,
+          message: 'STAT01 report executed successfully',
           reportType: 'STAT01',
           tableName: `yreport_${realm}_stat01`
         };
       }
-      
+
       case 'STAT02': {
         await client.query(`DROP TABLE IF EXISTS "yreport_${realm}_stat02"`);
         await client.query(`
           CREATE TABLE "yreport_${realm}_stat02" AS
-SELECT 
-sap_raw_user_stats.ACCOUNT as USERID, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-sap_raw_user_stats.action as TCODE, 
-yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION, 
-MAX(sap_raw_user_stats.count) as SCREEN_COUNTER, 
-sap_raw_user_stats.selected_at, 
-sap_raw_user_stats.period_type 
-FROM 
-sap_raw_user_stats 
-LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = sap_raw_user_stats.action 
-LEFT JOIN yr_${realm}_user_complete_info ON yr_${realm}_user_complete_info.BNAME = sap_raw_user_stats.ACCOUNT 
-WHERE 
+SELECT
+sap_raw_user_stats.ACCOUNT as USERID,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+sap_raw_user_stats.action as TCODE,
+yr_${realm}_tcodes_description.TTEXT as TCODE_DESCRIPTION,
+MAX(sap_raw_user_stats.count) as SCREEN_COUNTER,
+sap_raw_user_stats.selected_at,
+sap_raw_user_stats.period_type
+FROM
+sap_raw_user_stats
+LEFT JOIN yr_${realm}_tcodes_description ON yr_${realm}_tcodes_description.TCODE = sap_raw_user_stats.action
+LEFT JOIN yr_${realm}_user_complete_info ON yr_${realm}_user_complete_info.BNAME = sap_raw_user_stats.ACCOUNT
+WHERE
 sap_raw_user_stats.actiontype = 'T'
 AND realm = '${realm}'
-GROUP BY 
-sap_raw_user_stats.ACCOUNT, 
-yr_${realm}_user_complete_info.NAME_FIRST, 
-yr_${realm}_user_complete_info.NAME_LAST, 
-sap_raw_user_stats.action, 
-yr_${realm}_tcodes_description.TTEXT, 
-sap_raw_user_stats.selected_at, 
+GROUP BY
+sap_raw_user_stats.ACCOUNT,
+yr_${realm}_user_complete_info.NAME_FIRST,
+yr_${realm}_user_complete_info.NAME_LAST,
+sap_raw_user_stats.action,
+yr_${realm}_tcodes_description.TTEXT,
+sap_raw_user_stats.selected_at,
 sap_raw_user_stats.period_type
         `);
 
-        return { 
-          success: true, 
-          message: 'STAT02 report executed successfully', 
+        return {
+          success: true,
+          message: 'STAT02 report executed successfully',
           reportType: 'STAT02',
           tableName: `yreport_${realm}_stat02`
         };
       }
 
-      
+
       // Add more report types here in the future
       // case 'USER02': { ... }
 
@@ -3063,4 +3154,3 @@ export async function getReportRows(realm, tableName, limit = 100, offset = 0) {
     throw err;
   }
 }
-
