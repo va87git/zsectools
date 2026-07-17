@@ -1,7 +1,7 @@
 // VERY FIRST LINE OF SRC/SERVER.JS
 if (typeof process.pkg !== 'undefined') {
   // Force Node not to crash with precompiled native modules (such as node-rfc)
-  process.jsFlags = "--no-freeze-flags-after-init"; 
+  process.jsFlags = "--no-freeze-flags-after-init";
 }
 import 'dotenv/config';
 import express from 'express';
@@ -113,9 +113,6 @@ app.get('/api/tables', async (req, res) => {
 // path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
     // process.cwd() points to the main folder of your project
     const tableFile = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
-
-//line changed to make the path absolute across linux and windows (see above):
-    //const tableFile = '/home/valerio/Documents/CursorTest/SAP-TABLE-LIST.txt';
 
     const content = await fs.readFile(tableFile, 'utf8');
     const tables = content.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
@@ -297,9 +294,9 @@ app.put('/api/sap-realms/:realm', async (req, res) => {
 
     // Validation for realm: only lowercase a-z and 0-9
     if (!/^[a-z0-9]+$/.test(realm)) {
-      res.status(400).json({ 
-        ok: false, 
-        error: 'Invalid realm name. Only lowercase letters (a-z) and numbers (0-9) are allowed.' 
+      res.status(400).json({
+        ok: false,
+        error: 'Invalid realm name. Only lowercase letters (a-z) and numbers (0-9) are allowed.'
       });
       return;
     }
@@ -370,9 +367,9 @@ app.post('/api/import-sap/tables', async (req, res) => {
     // Specific field selection for USR02 to avoid SAP data length errors
     const TABLE_FIELD_OVERRIDES = {
       'USR02': [
-        'BNAME', 'GLTGV', 'GLTGB', 'USTYP', 'CLASS', 'LOCNT', 'UFLAG', 'ACCNT', 'ANAME', 
-        'ERDAT', 'TRDAT', 'LTIME', 'PWDCHGDATE', 'PWDSTATE', 'RESERVED', 
-        'PWDHISTORY', 'PWDLGNDATE', 'PWDSETDATE', 'PWDINITIAL', 'PWDLOCKDATE', 
+        'BNAME', 'GLTGV', 'GLTGB', 'USTYP', 'CLASS', 'LOCNT', 'UFLAG', 'ACCNT', 'ANAME',
+        'ERDAT', 'TRDAT', 'LTIME', 'PWDCHGDATE', 'PWDSTATE', 'RESERVED',
+        'PWDHISTORY', 'PWDLGNDATE', 'PWDSETDATE', 'PWDINITIAL', 'PWDLOCKDATE',
         'SECURITY_POLICY'
       ],
       'ADRP': ['PERSNUMBER','DATE_FROM','NATION','DATE_TO','TITLE','NAME_FIRST','NAME_LAST',
@@ -401,12 +398,12 @@ app.post('/api/import-sap/tables', async (req, res) => {
       if (!cleanName) {
         continue;
       }
-      
+
       let tableResult = { tableName: cleanName, success: false, rowCount: 0, error: null };
 
       try {
         const fieldsToSelect = TABLE_FIELD_OVERRIDES[cleanName] || [];
-        
+
         // Hardcoded filters for specific tables only
         let options = [];
         switch (cleanName) {
@@ -424,35 +421,35 @@ app.post('/api/import-sap/tables', async (req, res) => {
             break;
           // Add more table filters here as needed
         }
-        
+
         // Iterative download with ROWSKIPS and ROWCOUNT
         let totalRowsImported = 0;
         let rowSkips = 0;
         const rowCount = 100000;
         let hasMore = true;
         let firstBatch = true;
-        
+
         while (hasMore) {
           const { fields, rows } = await readSapTable(sapConfig, cleanName, fieldsToSelect, rowSkips, rowCount, options);
-          
+
           if (rows.length === 0) {
             hasMore = false;
             break;
           }
-          
+
           // Save batch to DB (truncate only on first batch, then append)
           await replaceImportedTableRows(realm, cleanName, fields, rows, !firstBatch);
-          
+
           totalRowsImported += rows.length;
           rowSkips += rowCount; // Increment by the requested count per SAP spec
           firstBatch = false;
-          
+
           // If we got fewer rows than requested, we've reached the end
           if (rows.length < rowCount) {
             hasMore = false;
           }
         }
-        
+
         tableResult.success = true;
         tableResult.rowCount = totalRowsImported;
       } catch (err) {
@@ -576,7 +573,7 @@ app.delete('/api/import-sap/user-statistics/batch', async (req, res) => {
     const realm = String(req.body?.realm || '').trim();
     const periodType = String(req.body?.periodType || '').trim();
     const selectedAt = String(req.body?.selectedAt || '').trim();
-    
+
     if (!realm || !periodType || !selectedAt) {
       res.status(400).json({ ok: false, error: 'realm, periodType and selectedAt are required' });
       return;
@@ -602,7 +599,7 @@ app.post('/api/export-sap/tables-txt', async (req, res) => {
     // Since we now export one by one from frontend, this will typically have 1 table
     const results = await exportTablesToTxt(realm, tables);
     const first = results[0];
-    
+
     if (first.error) {
       res.status(500).json({ ok: false, error: first.error });
       return;
@@ -635,7 +632,7 @@ app.post('/api/export-sap/statistics-txt', async (req, res) => {
     const realm = String(req.body?.realm || '').trim();
     const selectedAt = req.body?.selectedAt ? String(req.body.selectedAt).trim() : null;
     const periodType = req.body?.periodType ? String(req.body.periodType).trim().toUpperCase() : 'D';
-    
+
     if (!realm) {
       res.status(400).json({ ok: false, error: 'realm is required' });
       return;
@@ -648,7 +645,7 @@ app.post('/api/export-sap/statistics-txt', async (req, res) => {
     }
 
     // Include period_type in the file header
-    const txtContent = result.rowCount === 0 
+    const txtContent = result.rowCount === 0
       ? `# PERIOD_TYPE: ${result.periodType}\n# No data`
       : `# PERIOD_TYPE: ${result.periodType}\n${result.header}\n${result.rows.join('\n')}`;
 
@@ -669,7 +666,7 @@ app.post('/api/import-sap/tables-txt', async (req, res) => {
     const realm = String(req.body?.realm || '').trim();
     const tableName = String(req.body?.tableName || '').trim().toUpperCase();
     const txtContent = String(req.body?.txtContent || '').trim();
-    
+
     if (!realm || !tableName || !txtContent) {
       res.status(400).json({ ok: false, error: 'realm, tableName and txtContent are required' });
       return;
@@ -951,7 +948,7 @@ app.post('/api/import-sap/statistics-txt', async (req, res) => {
   try {
     const realm = String(req.body?.realm || '').trim();
     const txtContent = String(req.body?.txtContent || '').trim();
-    
+
     if (!realm || !txtContent) {
       res.status(400).json({ ok: false, error: 'realm and txtContent are required' });
       return;
@@ -991,12 +988,12 @@ app.post('/api/reports/execute', async (req, res) => {
     const reportType = String(req.body?.reportType || '').trim().toUpperCase();
     const days = Number(req.body?.days || 0);
     const pattern = String(req.body?.rolePattern || '').trim().toUpperCase();
-    
+
     if (!realm) {
       res.status(400).json({ ok: false, error: 'realm is required' });
       return;
     }
-    
+
     if (!reportType) {
       res.status(400).json({ ok: false, error: 'reportType is required' });
       return;
@@ -1119,7 +1116,7 @@ app.get('/api/rfc/schema/:rfcCommand', (req, res) => {
 app.post('/api/rfc/execute-batch', async (req, res) => {
     try {
     const { realm, rfcCommand, rows } = req.body;
-    
+
     if (!realm || !rfcCommand || !rows) {
       return res.status(400).json({ error: 'Missing parameters' });
     }
@@ -1163,7 +1160,7 @@ async function applySapSdkPathFromSettings() {
     if (!current.includes(libPath)) {
       process.env.PATH = `${libPath};${sdkPath};${current}`;
     }
-	
+
 	//Force Node.js to accept DLLs from this folder
     try {
       if (typeof process.addDllDirectory === 'function') {
@@ -1173,7 +1170,7 @@ async function applySapSdkPathFromSettings() {
     } catch (dllError) {
       console.error("[SAP SDK] Impossibile aggiungere la DLL directory:", dllError);
     }
-	
+
   } else {
     const libPath = `${sdkPath}/lib`;
     const current = process.env.LD_LIBRARY_PATH || '';
@@ -1194,7 +1191,7 @@ app.use((req, res, next) => {
   // For everything else (frontend navigation), send index.html
   // IMPORTANT: use path.join when sending the file
   const indexPath = path.join(frontendPath, 'index.html');
-  
+
   res.sendFile(indexPath, (err) => {
     if (err) {
       // If index.html is not found either, there is a path error
