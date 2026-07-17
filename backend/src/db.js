@@ -1637,7 +1637,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
                 // =========================================================================
                 // SCENARIO B: PERMISSION-ONLY (es. S_DEVELOP - without actions)
                 // =========================================================================
-                console.log(`Analizzando [Permission-Only] Function: ${functId}`);
+                //console.log(`Analysis [Permission-Only] Function: ${functId}`);
 
                 // 1. get permissions
                 const permsRes = await q(
