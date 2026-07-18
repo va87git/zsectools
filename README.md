@@ -79,7 +79,7 @@ This technical user should be set up as follows:
 
 - **User type**: `B` (System / Background)
 - **Password**: strong and complex, following your organization's security policy
-- **Authorization**: assign the role `ZSECTOOLS`, available as [`ZSECTOOLS.SAP`](./ZSECTOOLS.SAP) in the root of this repository. This file can be imported directly into SAP using transaction `SG3I` or equivalent. Alternatively, you can create a custom role with at least the authorizations contained in that file.
+- **Authorization**: assign the role `ZSECTOOLS`, available as [`ZSECTOOLS.SAP`](./ZSECTOOLS.SAP) in the root of this repository. This file can be imported directly into SAP using transaction `PFCG` (upload role). Alternatively, you can create a custom role with at least the authorizations contained in that file.
 
 > **Note**: the `ZSECTOOLS.SAP` file is a SAP role export. It includes all the authorization objects and field values required for ZSecTools to read the necessary tables and execute the supported RFC calls. Please note that this role is strictly designed according to the **principle of least privilege**. Removing or restricting any of the included authorizations may cause the application to malfunction. Review the authorizations before importing them, and adjust them to your organization's security standards where appropriate.
 
