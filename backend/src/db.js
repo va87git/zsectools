@@ -1330,6 +1330,12 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
   );
   const risks = risksRes.rows;
 
+  // Extract all unique function IDs across all risks to analyze each function only once per element
+  const allFunctionIds = [...new Set(risks.flatMap(r =>
+    ['fun1','fun2','fun3','fun4','fun5']
+      .map(f => r[f]).filter(f => f && f.trim() !== '')
+  ))];
+
   const totalElements = elements.length;
 
   for (let elIdx = 0; elIdx < elements.length; elIdx++) {
@@ -1449,11 +1455,393 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       `, [elementId]);
     }
 
-    // STEP 2: For each active risk
+    // STEP 2: Analyze each unique function once per element.
+    // Permissions are checked per-auth using authorizationCheck logic:
+    // - Different objects can come from different auths ("autorizzazioni si sommano")
+    // - All fields of the SAME object must come from the SAME auth
+    const foundByFunction = {};
+
+    for (const functId of allFunctionIds) {
+      const actionsRes = await q(
+        `SELECT action FROM sod_function_actions
+         WHERE rulesetid = $1 AND functid = $2
+           AND (inactive IS NULL OR inactive = '0' OR inactive = '')`,
+        [rulesetId, functId]
+      );
+
+      const foundRows = [];
+
+      if (actionsRes.rows.length > 0) {
+        // ========================================================================
+        // SCENARIO A: function has actions
+        // ========================================================================
+
+        // Pre-load all permissions for this function (used if analysisLevel === 'Permission')
+        let allPermRows = [];
+        if (analysisLevel === 'Permission') {
+          const permsRes = await q(
+            `SELECT resourceid, resourceextn, fromval, toval, searchtype, action
+             FROM sod_function_permissions
+             WHERE rulesetid = $1 AND functid = $2
+               AND COALESCE(inactive::TEXT, '0') != '1'`,
+            [rulesetId, functId]
+          );
+          allPermRows = permsRes.rows;
+        }
+
+        for (const actionRow of actionsRes.rows) {
+          const action = actionRow.action;
+          let objectToSearch, actionValue;
+          if (action.startsWith('[')) {
+            objectToSearch = 'S_SERVICE';
+            actionValue = action.replace(/^\[.*?\]/, '').trim();
+          } else {
+            objectToSearch = 'S_TCODE';
+            actionValue = action;
+          }
+
+          // Search in the entire user authorization buffer
+          const authsRes = await q(
+            `SELECT DISTINCT objct, auth, field, von, bis, profile_s, profile_c, role_single, role_composite
+             FROM tmp_sod_element_auth
+             WHERE elementid = $1 AND UPPER(objct) = UPPER($2)`,
+            [elementId, objectToSearch]
+          );
+
+          // Group by auth ID for authorizationCheck
+          const authMap = {};
+          for (const row of authsRes.rows) {
+            const key = row.auth;
+            if (!authMap[key]) authMap[key] = { auth: row.auth, profile_s: row.profile_s, profile_c: row.profile_c, role_single: row.role_single || '', role_composite: row.role_composite || '', fields: [], froms: [], tos: [] };
+            authMap[key].fields.push(row.field);
+            authMap[key].froms.push(row.von);
+            authMap[key].tos.push(row.bis);
+          }
+
+          // Check if any auth matches the action
+          let actionMatched = false;
+          let actionMatchAuth = null;
+          let actionMatchFields = null;
+
+          for (const authEntry of Object.values(authMap)) {
+            const matched = authorizationCheck(
+              authEntry.auth,
+              objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
+              objectToSearch, ['TCD'], [actionValue], [actionValue]
+            );
+            if (matched) {
+              actionMatched = true;
+              actionMatchAuth = authEntry;
+              const mi = authEntry.fields.findIndex((f, i) =>
+                checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
+              );
+              actionMatchFields = {
+                field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
+                foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
+                foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0]
+              };
+              break;
+            }
+          }
+
+          if (!actionMatched) continue; // Action not found, skip
+
+          // If analysisLevel === 'Permission', verify using per-auth authorizationCheck logic
+          let permMatchRows = [];
+          if (analysisLevel === 'Permission' && allPermRows.length > 0) {
+            // Filter permissions for this specific action
+            const actionPermRows = allPermRows.filter(pr => pr.action === action);
+
+            if (actionPermRows.length > 0) {
+              // Group permissions by object, then by field
+              const permByObj = {};
+              for (const pr of actionPermRows) {
+                const obj = pr.resourceid.toUpperCase();
+                const fld = pr.resourceextn;
+                if (!permByObj[obj]) permByObj[obj] = {};
+                if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
+                const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
+                const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
+                // FIX: empty from means start of range (''), empty to means end of range ('{')
+                const fromval = fromEmpty ? '' : pr.fromval;
+                const toval   = (fromEmpty && toEmpty) ? '{' : (toEmpty ? fromval : pr.toval);
+                permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
+              }
+
+              // Query ALL auths of the element for the permission objects
+              const permObjects = Object.keys(permByObj);
+              const allAuthRes = await q(
+                `SELECT DISTINCT objct, field, von, bis, auth, profile_s, profile_c, role_single, role_composite
+                 FROM tmp_sod_element_auth
+                 WHERE elementid = $1 AND UPPER(objct) = ANY($2)`,
+                [elementId, permObjects]
+              );
+
+              // Group auth rows by auth ID and object
+              const authByIdAndObj = {};
+              for (const ar of allAuthRes.rows) {
+                const key = `${ar.auth}|${ar.objct.toUpperCase()}`;
+                if (!authByIdAndObj[key]) {
+                  authByIdAndObj[key] = {
+                    auth: ar.auth, objct: ar.objct.toUpperCase(),
+                    profile_s: ar.profile_s, profile_c: ar.profile_c,
+                    role_single: ar.role_single || '', role_composite: ar.role_composite || '',
+                    fields: [], froms: [], tos: []
+                  };
+                }
+                authByIdAndObj[key].fields.push(ar.field);
+                authByIdAndObj[key].froms.push(ar.von);
+                authByIdAndObj[key].tos.push(ar.bis);
+              }
+
+              // For each permission object, check if ANY auth satisfies ALL required fields
+              let allObjectsPassed = true;
+              const objectMatchResults = {}; // { object: [passing auth entries] }
+
+              for (const [objName, fieldMap] of Object.entries(permByObj)) {
+                const authEntriesForObj = Object.values(authByIdAndObj).filter(e => e.objct === objName);
+                if (authEntriesForObj.length === 0) {
+                  allObjectsPassed = false;
+                  break;
+                }
+
+                const passingAuths = [];
+                for (const authEntry of authEntriesForObj) {
+                  let authPassed = true;
+
+                  for (const [fieldName, valueRows] of Object.entries(fieldMap)) {
+                    const andRows = valueRows.filter(v => v.searchtype === 'AND');
+                    const orRows  = valueRows.filter(v => v.searchtype === 'OR');
+
+                    for (const av of andRows) {
+                      const anyMatch = authEntry.fields.some((f, i) =>
+                        checkAuthorizationField(fieldName, av.fromval, av.toval, f, authEntry.froms[i], authEntry.tos[i])
+                      );
+                      if (!anyMatch) { authPassed = false; break; }
+                    }
+                    if (!authPassed) break;
+
+                    if (orRows.length > 0) {
+                      const anyOrMatch = orRows.some(ov =>
+                        authEntry.fields.some((f, i) =>
+                          checkAuthorizationField(fieldName, ov.fromval, ov.toval, f, authEntry.froms[i], authEntry.tos[i])
+                        )
+                      );
+                      if (!anyOrMatch) { authPassed = false; break; }
+                    }
+                  }
+
+                  if (authPassed) {
+                    passingAuths.push(authEntry);
+                  }
+                }
+
+                if (passingAuths.length === 0) {
+                  allObjectsPassed = false;
+                  break;
+                }
+
+                objectMatchResults[objName] = passingAuths;
+              }
+
+              if (!allObjectsPassed) continue; // Permissions not satisfied, skip this action
+
+              // Build permission match rows for ALL passing auths.
+              // For each permission object, create rows for EACH passing auth.
+              permMatchRows = [];
+              for (const [objName, fieldMap] of Object.entries(permByObj)) {
+                const passingAuths = objectMatchResults[objName];
+
+                for (const passingAuth of passingAuths) {
+                  for (const [fieldName, valueRows] of Object.entries(fieldMap)) {
+                    for (const pv of valueRows) {
+                      const matchIdx = passingAuth.fields.findIndex((f, i) =>
+                        checkAuthorizationField(fieldName, pv.fromval, pv.toval, f, passingAuth.froms[i], passingAuth.tos[i])
+                      );
+                      if (matchIdx >= 0) {
+                        permMatchRows.push({
+                          action, objectToSearch: objName, field: fieldName,
+                          searchFrom: pv.fromval === '{' ? '' : pv.fromval,
+                          searchTo: pv.toval === '{' ? '' : pv.toval,
+                          foundFrom: passingAuth.froms[matchIdx], foundTo: passingAuth.tos[matchIdx],
+                          auth: passingAuth.auth,
+                          profileS: passingAuth.profile_s || '',
+                          profileC: passingAuth.profile_c || '',
+                          roleSingle: passingAuth.role_single || '',
+                          roleComposite: passingAuth.role_composite || ''
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // Action matched (and permissions if required): add to result
+          foundRows.push({
+            action, objectToSearch,
+            field: actionMatchFields.field,
+            searchFrom: actionValue, searchTo: actionValue,
+            foundFrom: actionMatchFields.foundFrom,
+            foundTo: actionMatchFields.foundTo,
+            auth: actionMatchAuth.auth, profileS: actionMatchAuth.profile_s, profileC: actionMatchAuth.profile_c,
+            roleSingle: actionMatchAuth.role_single || '', roleComposite: actionMatchAuth.role_composite || ''
+          });
+
+          if (analysisLevel === 'Permission' && permMatchRows.length > 0) {
+            foundRows.push(...permMatchRows);
+          }
+        }
+      } else if (analysisLevel === 'Permission') {
+        // ========================================================================
+        // SCENARIO B: PERMISSION-ONLY (e.g. S_DEVELOP - without actions)
+        // ========================================================================
+
+        // 1. Get permissions
+        const permsRes = await q(
+          `SELECT resourceid, resourceextn, fromval, toval, searchtype
+           FROM sod_function_permissions
+           WHERE rulesetid = $1 AND functid = $2
+             AND COALESCE(inactive::TEXT, '0') != '1'`,
+          [rulesetId, functId]
+        );
+        const permRows = permsRes.rows;
+
+        if (permRows.length > 0) {
+          // Group permissions by object, then by field
+          const permByObj = {};
+          for (const pr of permRows) {
+            const obj = pr.resourceid.toUpperCase();
+            const fld = pr.resourceextn;
+            if (!permByObj[obj]) permByObj[obj] = {};
+            if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
+            const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
+            const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
+            // FIX: empty from means start of range (''), empty to means end of range ('{')
+            const fromval = fromEmpty ? '' : pr.fromval;
+            const toval   = (fromEmpty && toEmpty) ? '{' : (toEmpty ? fromval : pr.toval);
+            permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
+          }
+
+          // 2. Get all auths of the element for the permission objects
+          const permObjects = Object.keys(permByObj);
+          const userAuthsRes = await q(
+            `SELECT DISTINCT auth, objct, field, von, bis, profile_s, profile_c, role_single, role_composite
+             FROM tmp_sod_element_auth
+             WHERE elementid = $1 AND UPPER(objct) = ANY($2)`,
+            [elementId, permObjects]
+          );
+
+          // Group by auth ID and object
+          const authByIdAndObj = {};
+          for (const row of userAuthsRes.rows) {
+            const key = `${row.auth}|${row.objct.toUpperCase()}`;
+            if (!authByIdAndObj[key]) {
+              authByIdAndObj[key] = {
+                auth: row.auth, objct: row.objct.toUpperCase(),
+                profile_s: row.profile_s, profile_c: row.profile_c,
+                role_single: row.role_single || '', role_composite: row.role_composite || '',
+                fields: [], froms: [], tos: []
+              };
+            }
+            authByIdAndObj[key].fields.push(row.field);
+            authByIdAndObj[key].froms.push(row.von);
+            authByIdAndObj[key].tos.push(row.bis);
+          }
+
+          // 3. For each permission object, check if ANY auth satisfies ALL required fields
+          let allObjectsPassed = true;
+          const objectMatchResults = {};
+
+          for (const [objName, fieldMap] of Object.entries(permByObj)) {
+            const authEntriesForObj = Object.values(authByIdAndObj).filter(e => e.objct === objName);
+            if (authEntriesForObj.length === 0) {
+              allObjectsPassed = false;
+              break;
+            }
+
+            const passingAuths = [];
+            for (const authEntry of authEntriesForObj) {
+              let authPassed = true;
+
+              for (const [fieldName, valueRows] of Object.entries(fieldMap)) {
+                const andRows = valueRows.filter(v => v.searchtype === 'AND');
+                const orRows  = valueRows.filter(v => v.searchtype === 'OR');
+
+                for (const av of andRows) {
+                  const anyMatch = authEntry.fields.some((f, i) =>
+                    checkAuthorizationField(fieldName, av.fromval, av.toval, f, authEntry.froms[i], authEntry.tos[i])
+                  );
+                  if (!anyMatch) { authPassed = false; break; }
+                }
+                if (!authPassed) break;
+
+                if (orRows.length > 0) {
+                  const anyOrMatch = orRows.some(ov =>
+                    authEntry.fields.some((f, i) =>
+                      checkAuthorizationField(fieldName, ov.fromval, ov.toval, f, authEntry.froms[i], authEntry.tos[i])
+                    )
+                  );
+                  if (!anyOrMatch) { authPassed = false; break; }
+                }
+              }
+
+              if (authPassed) {
+                passingAuths.push(authEntry);
+              }
+            }
+
+            if (passingAuths.length === 0) {
+              allObjectsPassed = false;
+              break;
+            }
+
+            objectMatchResults[objName] = passingAuths;
+          }
+
+          // If all objects have at least one passing auth, build result rows for ALL passing auths
+          if (allObjectsPassed) {
+            for (const [objName, fieldMap] of Object.entries(permByObj)) {
+              const passingAuths = objectMatchResults[objName];
+
+              for (const passingAuth of passingAuths) {
+                for (const [fieldName, valueRows] of Object.entries(fieldMap)) {
+                  for (const pv of valueRows) {
+                    const matchIdx = passingAuth.fields.findIndex((f, i) =>
+                      checkAuthorizationField(fieldName, pv.fromval, pv.toval, f, passingAuth.froms[i], passingAuth.tos[i])
+                    );
+                    if (matchIdx >= 0) {
+                      foundRows.push({
+                        action: '', objectToSearch: objName, field: fieldName,
+                        searchFrom: pv.fromval === '{' ? '' : pv.fromval, searchTo: pv.toval === '{' ? '' : pv.toval,
+                        foundFrom: passingAuth.froms[matchIdx], foundTo: passingAuth.tos[matchIdx],
+                        auth: passingAuth.auth, profileS: passingAuth.profile_s, profileC: passingAuth.profile_c,
+                        roleSingle: passingAuth.role_single || '', roleComposite: passingAuth.role_composite || ''
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (foundRows.length > 0) foundByFunction[functId] = foundRows;
+    }
+
+    // STEP 3: For each risk, confirm only if ALL functions have at least one match
     for (const risk of risks) {
       const riskId = risk.riskid;
+      const riskFunctionIds = ['fun1','fun2','fun3','fun4','fun5']
+        .map(f => risk[f]).filter(f => f && f.trim() !== '');
+      if (riskFunctionIds.length === 0) continue;
+
+      if (!riskFunctionIds.every(f => foundByFunction[f] && foundByFunction[f].length > 0)) continue;
+
+      // Risk confirmed: write all found rows for all functions of this risk
       const riskDesc = await getSodRiskDescription(realmLanguage, rulesetId, riskId);
-      // Fetch and translate risklevel and risktype from sod_risks
       const riskMetaRes = await q(
         `SELECT risklevel, risktype FROM sod_risks WHERE rulesetid = $1 AND riskid = $2 LIMIT 1`,
         [rulesetId, riskId]
@@ -1462,319 +1850,19 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       const riskTypeRaw  = riskMetaRes.rows[0]?.risktype  ?? '';
       const riskLevel = translateRiskLevel(riskLevelRaw);
       const riskType  = translateRiskType(riskTypeRaw);
-      const functionIds = ['fun1','fun2','fun3','fun4','fun5']
-        .map(f => risk[f]).filter(f => f && f.trim() !== '');
-      if (functionIds.length === 0) continue;
 
-      const foundByFunction = {};
-
-      for (const functId of functionIds) {
-      const actionsRes = await q(
-                `SELECT action FROM sod_function_actions
-                 WHERE rulesetid = $1 AND functid = $2
-                   AND (inactive IS NULL OR inactive = '0' OR inactive = '')`,
-                [rulesetId, functId]
-              );
-
-              const foundRows = [];
-
-              if (actionsRes.rows.length > 0) {
-                // =========================================================================
-                // SCENARIO A: function has actions
-                // =========================================================================
-                for (const actionRow of actionsRes.rows) {
-                  const action = actionRow.action;
-                  let objectToSearch, actionValue;
-                  if (action.startsWith('[')) {
-                    objectToSearch = 'S_SERVICE';
-                    actionValue = action.replace(/^\[.*?\]/, '').trim();
-                  } else {
-                    objectToSearch = 'S_TCODE';
-                    actionValue = action;
-                  }
-
-                  const authsRes = await q(
-                    `SELECT DISTINCT objct, auth, field, von, bis, profile_s, profile_c, role_single, role_composite
-                     FROM tmp_sod_element_auth
-                     WHERE elementid = $1 AND UPPER(objct) = UPPER($2)`,
-                    [elementId, objectToSearch]
-                  );
-
-                  const authMap = {};
-                  for (const row of authsRes.rows) {
-                    const key = row.auth;
-                    if (!authMap[key]) authMap[key] = { auth: row.auth, profile_s: row.profile_s, profile_c: row.profile_c, role_single: row.role_single || '', role_composite: row.role_composite || '', fields: [], froms: [], tos: [] };
-                    authMap[key].fields.push(row.field);
-                    authMap[key].froms.push(row.von);
-                    authMap[key].tos.push(row.bis);
-                  }
-
-                  for (const authEntry of Object.values(authMap)) {
-                    const matched = authorizationCheck(
-                      authEntry.auth,
-                      objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
-                      objectToSearch, ['TCD'], [actionValue], [actionValue]
-                    );
-                    if (matched) {
-                      const mi = authEntry.fields.findIndex((f, i) =>
-                        checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
-                      );
-
-                      let permMatchRows = [];
-                      if (analysisLevel === 'Permission') {
-                        const permsRes = await q(
-                          `SELECT resourceid, resourceextn, fromval, toval, searchtype, action
-                           FROM sod_function_permissions
-                           WHERE rulesetid = $1 AND functid = $2 AND action = $3
-                             AND COALESCE(inactive::TEXT, '0') != '1'`,
-                          [rulesetId, functId, action]
-                        );
-                        const permRows = permsRes.rows;
-
-                        if (permRows.length > 0) {
-                          const permByObj = {};
-                          for (const pr of permRows) {
-                            const obj = pr.resourceid;
-                            const fld = pr.resourceextn;
-                            if (!permByObj[obj]) permByObj[obj] = {};
-                            if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
-                            const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
-                            const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
-                            const fromval = fromEmpty ? '{' : pr.fromval;
-                            const toval   = toEmpty ? (fromEmpty ? '{' : fromval) : pr.toval;
-                            permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
-                          }
-
-                          const authFullRes = await q(
-                            `SELECT DISTINCT objct, field, von, bis, auth
-                             FROM tmp_sod_element_auth
-                             WHERE elementid = $1 AND auth = $2`,
-                            [elementId, authEntry.auth]
-                          );
-
-                          const authByObj = {};
-                          for (const ar of authFullRes.rows) {
-                            const obj = ar.objct.toUpperCase();
-                            if (!authByObj[obj]) authByObj[obj] = { fields: [], froms: [], tos: [] };
-                            authByObj[obj].fields.push(ar.field);
-                            authByObj[obj].froms.push(ar.von);
-                            authByObj[obj].tos.push(ar.bis);
-                          }
-
-                          let permPassed = true;
-                          for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
-                            const authObj = authByObj[resourceId.toUpperCase()];
-                            if (!authObj) { permPassed = false; break; }
-
-                            for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
-                              const andRows = valueRows.filter(v => v.searchtype === 'AND');
-                              const orRows  = valueRows.filter(v => v.searchtype === 'OR');
-
-                              for (const av of andRows) {
-                                const anyMatch = authObj.fields.some((f, i) =>
-                                  checkAuthorizationField(resourceExtn, av.fromval, av.toval, f, authObj.froms[i], authObj.tos[i])
-                                );
-                                if (!anyMatch) { permPassed = false; break; }
-                              }
-                              if (!permPassed) break;
-
-                              if (orRows.length > 0) {
-                                const anyOrMatch = orRows.some(ov =>
-                                  authObj.fields.some((f, i) =>
-                                    checkAuthorizationField(resourceExtn, ov.fromval, ov.toval, f, authObj.froms[i], authObj.tos[i])
-                                  )
-                                );
-                                if (!anyOrMatch) { permPassed = false; break; }
-                              }
-                            }
-                            if (!permPassed) break;
-                          }
-
-                          if (!permPassed) continue;
-
-                          permMatchRows = [];
-                          for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
-                            const authObj = authByObj[resourceId.toUpperCase()];
-                            if (!authObj) continue;
-                            for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
-                              for (const pv of valueRows) {
-                                const matchIdx = authObj.fields.findIndex((f, i) =>
-                                  checkAuthorizationField(resourceExtn, pv.fromval, pv.toval, f, authObj.froms[i], authObj.tos[i])
-                                );
-                                if (matchIdx >= 0) {
-                                  permMatchRows.push({
-                                    action, objectToSearch: resourceId, field: resourceExtn,
-                                    searchFrom: pv.fromval === '{' ? '' : pv.fromval,
-                                    searchTo: pv.toval === '{' ? '' : pv.toval,
-                                    foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
-                                    auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                                    roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
-                                  });
-                                }
-                              }
-                            }
-                          }
-                        }
-                      } // end analysisLevel === 'Permission'
-
-                      foundRows.push({
-                        action, objectToSearch,
-                        field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
-                        searchFrom: actionValue, searchTo: actionValue,
-                        foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
-                        foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0],
-                        auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                        roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
-                      });
-
-                      if (analysisLevel === 'Permission' && permMatchRows.length > 0) {
-                        foundRows.push(...permMatchRows);
-                      }
-                      break;
-                    }
-                  }
-                } // end loop actionsRow
-              } else if (analysisLevel === 'Permission') {
-                // =========================================================================
-                // SCENARIO B: PERMISSION-ONLY (es. S_DEVELOP - without actions)
-                // =========================================================================
-                //console.log(`Analysis [Permission-Only] Function: ${functId}`);
-
-                // 1. get permissions
-                const permsRes = await q(
-                  `SELECT resourceid, resourceextn, fromval, toval, searchtype
-                   FROM sod_function_permissions
-                   WHERE rulesetid = $1 AND functid = $2
-                     AND COALESCE(inactive::TEXT, '0') != '1'`,
-                  [rulesetId, functId]
-                );
-                const permRows = permsRes.rows;
-
-                if (permRows.length > 0) {
-                  // group object - field
-                  const permByObj = {};
-                  for (const pr of permRows) {
-                    const obj = pr.resourceid;
-                    const fld = pr.resourceextn;
-                    if (!permByObj[obj]) permByObj[obj] = {};
-                    if (!permByObj[obj][fld]) permByObj[obj][fld] = [];
-                    const fromEmpty = !pr.fromval || pr.fromval.trim() === '';
-                    const toEmpty   = !pr.toval   || pr.toval.trim()   === '';
-                    const fromval = fromEmpty ? '{' : pr.fromval;
-                    const toval   = toEmpty ? (fromEmpty ? '{' : fromval) : pr.toval;
-                    permByObj[obj][fld].push({ fromval, toval, searchtype: (pr.searchtype || 'AND').toUpperCase() });
-                  }
-
-                  // 2. get all authid
-                  const userAuthsRes = await q(
-                    `SELECT DISTINCT auth, objct, field, von, bis, profile_s, profile_c, role_single, role_composite
-                     FROM tmp_sod_element_auth
-                     WHERE elementid = $1`,
-                    [elementId]
-                  );
-
-                  // group authid - object
-                  const authMap = {};
-                  for (const row of userAuthsRes.rows) {
-                    const aId = row.auth;
-                    const obj = row.objct.toUpperCase();
-                    if (!authMap[aId]) {
-                      authMap[aId] = {
-                        auth: aId, profile_s: row.profile_s, profile_c: row.profile_c,
-                        role_single: row.role_single || '', role_composite: row.role_composite || '',
-                        objects: {}
-                      };
-                    }
-                    if (!authMap[aId].objects[obj]) authMap[aId].objects[obj] = { fields: [], froms: [], tos: [] };
-                    authMap[aId].objects[obj].fields.push(row.field);
-                    authMap[aId].objects[obj].froms.push(row.von);
-                    authMap[aId].objects[obj].tos.push(row.bis);
-                  }
-
-                  // 3. cycle authid
-                  for (const authEntry of Object.values(authMap)) {
-                    let permPassed = true;
-                    let currentAuthMatchRows = [];
-
-                    for (const [resourceId, fieldMap] of Object.entries(permByObj)) {
-                      const authObj = authEntry.objects[resourceId.toUpperCase()];
-                      if (!authObj) { permPassed = false; break; }
-
-                      for (const [resourceExtn, valueRows] of Object.entries(fieldMap)) {
-                        const andRows = valueRows.filter(v => v.searchtype === 'AND');
-                        const orRows  = valueRows.filter(v => v.searchtype === 'OR');
-
-                        for (const av of andRows) {
-                          const matchIdx = authObj.fields.findIndex((f, i) =>
-                            checkAuthorizationField(resourceExtn, av.fromval, av.toval, f, authObj.froms[i], authObj.tos[i])
-                          );
-                          if (matchIdx === -1) { permPassed = false; break; }
-
-                          currentAuthMatchRows.push({
-                            action: '', objectToSearch: resourceId, field: resourceExtn,
-                            searchFrom: av.fromval === '{' ? '' : av.fromval, searchTo: av.toval === '{' ? '' : av.toval,
-                            foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
-                            auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                            roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
-                          });
-                        }
-                        if (!permPassed) break;
-
-                        if (orRows.length > 0) {
-                          let anyOrMatch = false;
-                          for (const ov of orRows) {
-                            const matchIdx = authObj.fields.findIndex((f, i) =>
-                              checkAuthorizationField(resourceExtn, ov.fromval, ov.toval, f, authObj.froms[i], authObj.tos[i])
-                            );
-                            if (matchIdx >= 0) {
-                              anyOrMatch = true;
-                              currentAuthMatchRows.push({
-                                action: '', objectToSearch: resourceId, field: resourceExtn,
-                                searchFrom: ov.fromval === '{' ? '' : ov.fromval, searchTo: ov.toval === '{' ? '' : ov.toval,
-                                foundFrom: authObj.froms[matchIdx], foundTo: authObj.tos[matchIdx],
-                                auth: authEntry.auth, profileS: authEntry.profile_s, profileC: authEntry.profile_c,
-                                roleSingle: authEntry.role_single || '', roleComposite: authEntry.role_composite || ''
-                              });
-                              break;
-                            }
-                          }
-                          if (!anyOrMatch) { permPassed = false; break; }
-                        }
-                      }
-                      if (!permPassed) break;
-                    }
-
-                    // if authid match permission map, save
-                    if (permPassed && currentAuthMatchRows.length > 0) {
-                      foundRows.push(...currentAuthMatchRows);
-                    }
-                  }
-                }
-              } // end loop actions
-
-
-
-        if (foundRows.length > 0) foundByFunction[functId] = foundRows;
-      } // end loop functionIds
-
-      // STEP 3: risk confirmed only if ALL functions have at least one action found
-      if (!functionIds.every(f => foundByFunction[f] && foundByFunction[f].length > 0)) continue;
-
-      // STEP 4: add to sod_ra_results
-      for (const functId of functionIds) {
+      for (const functId of riskFunctionIds) {
         const functDesc = await getSodFunctionDescription(realmLanguage, rulesetId, functId);
         for (const row of foundByFunction[functId]) {
 
-          // Lookup rolesingle e rolecomposite
+          // Lookup rolesingle and rolecomposite
           let roleSingle = '';
           let roleComposite = '';
 
           if (elementType === 'Roles') {
-            // For Roles: roleSingle and roleComposite are already in the tmp table row
             roleSingle = row.roleSingle || elementId;
             roleComposite = row.roleComposite || '';
           } else {
-            // For Users: look up rolesingle in agr_1016 via profile_s or profile_c
             const profilesToTry = [row.profileS, row.profileC].filter(p => p && p.trim() !== '');
             for (const prof of profilesToTry) {
               const agr1016Res = await q(
@@ -1786,7 +1874,6 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
                 break;
               }
             }
-            // rolecomposite: look up in agr_agrs + verify assignment in agr_users with valid dates
             if (roleSingle) {
               const agrAgrsRes = await q(
                 `SELECT agr_name FROM sap_raw_${realm}_agr_agrs WHERE child_agr = $1`,
@@ -1828,10 +1915,10 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
           ]);
         }
       }
-    } // fine loop risks
+    }
 
     await q(`DROP TABLE IF EXISTS tmp_sod_element_auth`);
-  } // fine loop elements
+  }
 
   const totalRes = await q(`SELECT COUNT(*) AS count FROM sod_ra_results`);
   const total = Number(totalRes.rows[0].count);
