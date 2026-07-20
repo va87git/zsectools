@@ -1303,6 +1303,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       risktype TEXT,
       functionid TEXT,
       functiondescription TEXT,
+      action TEXT,
       authobject TEXT,
       authfield TEXT,
       searchfrom TEXT,
@@ -1813,13 +1814,13 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
           await q(`
             INSERT INTO sod_ra_results
             (elementtype,elementid,elementdescription,riskid,riskdescription,risklevel,risktype,
-             functionid,functiondescription,authobject,authfield,
+             functionid,functiondescription,action,authobject,authfield,
              searchfrom,searchto,foundvaluefrom,foundvalueto,
              authorizationID,profilesingle,profilecomposite,rolesingle,rolecomposite)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
           `, [
             elementType, elementId, elementDesc,
-            riskId, riskDesc, riskLevel, riskType, functId, functDesc,
+            riskId, riskDesc, riskLevel, riskType, functId, functDesc, row.action || '',
             row.objectToSearch, row.field,
             row.searchFrom, row.searchTo,
             row.foundFrom, row.foundTo,
@@ -1864,6 +1865,21 @@ export function checkAuthorizationField(
 ) {
   if (fieldSearch !== fieldCheck) return false;
 
+  // Helper function for SEARCH: expand wildcard, but leaves * as exact value (looking exactly for *)
+  const expandWildcardSearch = (from, to) => {
+    let f = String(from);
+    let t = String(to || from);
+
+    // Expand only if * is in string, but it is NOT the full string (eg. "SAR*")
+    // if f is exactly "*", leave it as normal value (does not expand)
+    if (f.includes("*") && f !== "*") {
+      let prefix = f.replace("*", "");
+      return [prefix, prefix + "{"];
+    }
+
+    return [f, t];
+  };
+
   // Helper function to expand wildcards into a range
   const expandWildcard = (from, to) => {
     let f = String(from);
@@ -1881,7 +1897,7 @@ export function checkAuthorizationField(
     return [f, t];
   };
 
-  const [fSearch, tSearch] = expandWildcard(valueFromSearch, valueToSearch);
+  const [fSearch, tSearch] = expandWildcardSearch(valueFromSearch, valueToSearch);
   const [fCheck, tCheck] = expandWildcard(valueFromCheck, valueToCheck);
 
   // overlap logic: (Start1 <= End2) AND (Start1 >= End2)
