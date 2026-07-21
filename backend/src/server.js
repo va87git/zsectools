@@ -61,7 +61,7 @@ import { fileURLToPath } from 'url'; // Keep this if needed for development, oth
 
 // This single line covers both development mode and the portable release
 const frontendPath = path.resolve(process.cwd(), 'frontend', 'dist');
-console.log(`[STG] Frontend path configurato in: ${frontendPath}`);
+//console.log(`[STG] Frontend path configured in: ${frontendPath}`);
 
 
 const app = express();

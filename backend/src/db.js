@@ -1472,6 +1472,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
       const foundRows = [];
 
       if (actionsRes.rows.length > 0) {
+        //console.log("checking functionID: " + functId);
         // ========================================================================
         // SCENARIO A: function has actions
         // ========================================================================
@@ -1520,25 +1521,48 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
 
           // Check if any auth matches the action
           let actionMatched = false;
-
           // Collect ALL auths that match the action (not just the first one)
+          // fieldsToSearch: array used for search (eg. ['TCD'] for S_TCODE)
+          // fieldsToSearch is now hard-coded as ['TCD']
+          // needs at least a review for services (S_SERVICE: SRV_NAME-SRV_TYPE).
+          const searchFields = ['TCD'];
+
           const actionMatchingAuths = [];
           for (const authEntry of Object.values(authMap)) {
-            const matched = authorizationCheck(
-              authEntry.auth,
-              objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
-              objectToSearch, ['TCD'], [actionValue], [actionValue]
-            );
+            let mi = -1;
+            let matched = false;
+
+            // Fast path: search single-field -> directly use checkAuthorizationField to find index
+            if (searchFields.length === 1) {
+              const searchField = searchFields[0];
+              mi = authEntry.fields.findIndex((f, i) =>
+                checkAuthorizationField(searchField, actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
+              );
+              if (mi >= 0) {
+                matched = true;
+              }
+            } else {
+              // General case: use authorizationCheck (AND across fields)
+              matched = authorizationCheck(
+                authEntry.auth,
+                objectToSearch, authEntry.fields, authEntry.froms, authEntry.tos,
+                objectToSearch, searchFields, [actionValue], [actionValue]
+              );
+              if (matched) {
+                // find single index for report (if necessary)
+                mi = authEntry.fields.findIndex((f, i) =>
+                  checkAuthorizationField(searchFields[0], actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
+                );
+              }
+            }
+
             if (matched) {
               actionMatched = true;
-              const mi = authEntry.fields.findIndex((f, i) =>
-                checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
-              );
               actionMatchingAuths.push({
                 authEntry,
-                field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
-                foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
-                foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0]
+                field: mi >= 0 ? authEntry.fields[mi] : (authEntry.fields[0] || null),
+                foundFrom: mi >= 0 ? authEntry.froms[mi] : (authEntry.froms[0] || ''),
+                foundTo: mi >= 0 ? authEntry.tos[mi] : (authEntry.tos[0] || '')
               });
             }
           }
