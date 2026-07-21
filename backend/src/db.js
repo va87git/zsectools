@@ -1520,9 +1520,9 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
 
           // Check if any auth matches the action
           let actionMatched = false;
-          let actionMatchAuth = null;
-          let actionMatchFields = null;
 
+          // Collect ALL auths that match the action (not just the first one)
+          const actionMatchingAuths = [];
           for (const authEntry of Object.values(authMap)) {
             const matched = authorizationCheck(
               authEntry.auth,
@@ -1531,16 +1531,15 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
             );
             if (matched) {
               actionMatched = true;
-              actionMatchAuth = authEntry;
               const mi = authEntry.fields.findIndex((f, i) =>
                 checkAuthorizationField('TCD', actionValue, actionValue, f, authEntry.froms[i], authEntry.tos[i])
               );
-              actionMatchFields = {
+              actionMatchingAuths.push({
+                authEntry,
                 field: mi >= 0 ? authEntry.fields[mi] : authEntry.fields[0],
                 foundFrom: mi >= 0 ? authEntry.froms[mi] : authEntry.froms[0],
                 foundTo: mi >= 0 ? authEntry.tos[mi] : authEntry.tos[0]
-              };
-              break;
+              });
             }
           }
 
@@ -1678,16 +1677,18 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
             }
           }
 
-          // Action matched (and permissions if required): add to result
-          foundRows.push({
-            action, objectToSearch,
-            field: actionMatchFields.field,
-            searchFrom: actionValue, searchTo: actionValue,
-            foundFrom: actionMatchFields.foundFrom,
-            foundTo: actionMatchFields.foundTo,
-            auth: actionMatchAuth.auth, profileS: actionMatchAuth.profile_s, profileC: actionMatchAuth.profile_c,
-            roleSingle: actionMatchAuth.role_single || '', roleComposite: actionMatchAuth.role_composite || ''
-          });
+          // Action matched (and permissions if required): add a row for EACH matching auth
+          for (const { authEntry: aEntry, field: aField, foundFrom: aFrom, foundTo: aTo } of actionMatchingAuths) {
+            foundRows.push({
+              action, objectToSearch,
+              field: aField,
+              searchFrom: actionValue, searchTo: actionValue,
+              foundFrom: aFrom,
+              foundTo: aTo,
+              auth: aEntry.auth, profileS: aEntry.profile_s, profileC: aEntry.profile_c,
+              roleSingle: aEntry.role_single || '', roleComposite: aEntry.role_composite || ''
+            });
+          }
 
           if (analysisLevel === 'Permission' && permMatchRows.length > 0) {
             foundRows.push(...permMatchRows);
