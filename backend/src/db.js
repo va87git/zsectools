@@ -1493,7 +1493,8 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
         for (const actionRow of actionsRes.rows) {
           const action = actionRow.action;
           let objectToSearch, actionValue;
-          if (action.startsWith('[')) {
+          //enhance: services starts with [SVC] or [SRV]. Fiori Apps starts with [FAPP]
+          if (action.startsWith('[S')) {
             objectToSearch = 'S_SERVICE';
             actionValue = action.replace(/^\[.*?\]/, '').trim();
           } else {
@@ -1525,7 +1526,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
           // fieldsToSearch: array used for search (eg. ['TCD'] for S_TCODE)
           // fieldsToSearch is now hard-coded as ['TCD']
           // needs at least a review for services (S_SERVICE: SRV_NAME-SRV_TYPE).
-          const searchFields = ['TCD'];
+          const searchFields = objectToSearch === 'S_SERVICE' ? ['SRV_NAME'] : ['TCD'];
 
           const actionMatchingAuths = [];
           for (const authEntry of Object.values(authMap)) {
