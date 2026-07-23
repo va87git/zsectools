@@ -903,35 +903,37 @@ app.get('/api/sod/ra-results', async (req, res) => {
     }
 
     if (format === 'csv') {
-      const client = await pool.connect();
-      try {
-        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-        res.setHeader('Content-Disposition', 'attachment; filename="sod_ra_results.csv"');
-        const BATCH = 500;
-        let batchOffset = 0;
-        let headerWritten = false;
-        while (true) {
-          const batch = await client.query(
-            `SELECT * FROM sod_ra_results LIMIT $1 OFFSET $2`,
-            [BATCH, batchOffset]
-          );
-          if (batch.rows.length === 0) break;
-          if (!headerWritten) {
-            res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
-            headerWritten = true;
+          const client = await pool.connect();
+          try {
+            res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename="sod_ra_results.csv"');
+            const BATCH = 500;
+            let batchOffset = 0;
+            let headerWritten = false;
+            while (true) {
+              const batch = await client.query(
+                `SELECT * FROM sod_ra_results ORDER BY id ASC LIMIT $1 OFFSET $2`,
+                [BATCH, batchOffset]
+              );
+              if (batch.rows.length === 0) break;
+              // Removing id from batch
+              const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
+              if (!headerWritten) {
+                res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
+                headerWritten = true;
+              }
+              for (const row of cleanRows) {
+                res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+              }
+              if (batch.rows.length < BATCH) break;
+              batchOffset += BATCH;
+            }
+            res.end();
+          } finally {
+            client.release();
           }
-          for (const row of batch.rows) {
-            res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
-          }
-          if (batch.rows.length < BATCH) break;
-          batchOffset += BATCH;
+          return;
         }
-        res.end();
-      } finally {
-        client.release();
-      }
-      return;
-    }
 
     const totalRes = await pool.query(`SELECT COUNT(*) AS count FROM sod_ra_results`);
     const total = Number(totalRes.rows[0].count);

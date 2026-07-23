@@ -1294,6 +1294,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
   await q(`DROP TABLE IF EXISTS sod_ra_results`);
   await q(`
     CREATE TABLE sod_ra_results (
+      id BIGSERIAL PRIMARY KEY,
       elementtype TEXT,
       elementid TEXT,
       elementdescription TEXT,
@@ -1318,7 +1319,13 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
     )
   `);
 
-  const elementsRes = await q(
+  // Adding index for fastwer queries
+  await q(`
+    CREATE INDEX idx_sod_ra_results_element_risk_function
+    ON sod_ra_results(elementid, riskid, functionid)
+  `);
+
+    const elementsRes = await q(
     `SELECT elementid, elementdescription, elementtype FROM sod_ra_elements ORDER BY elementtype, elementid`
   );
   const elements = elementsRes.rows;
