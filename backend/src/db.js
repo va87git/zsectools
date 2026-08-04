@@ -1501,9 +1501,23 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
           const action = actionRow.action;
           let objectToSearch, actionValue;
           //enhance: services starts with [SVC] or [SRV]. Fiori Apps starts with [FAPP]
-          if (action.startsWith('[S')) {
+          if (action.startsWith('[SVC]')) {
             objectToSearch = 'S_SERVICE';
-            actionValue = action.replace(/^\[.*?\]/, '').trim();
+            const serviceName = action.replace('[SVC]', '').trim();
+            const hashRes = await q(
+              `SELECT name FROM sap_raw_${realm}_usobhash
+              WHERE RTRIM(SUBSTRING(obj_name, 1, LENGTH(obj_name) - 4)) = $1
+              OR RTRIM(obj_name) = $1
+              LIMIT 1`,
+              [serviceName],).catch(() => ({ rows: [] }));
+
+            //if no service is found, jump to next action (it is not relevant)
+            if (!hashRes.rows[0]?.name) {
+              continue;
+            }
+
+            actionValue = hashRes.rows[0]?.name || '';
+
           } else {
             objectToSearch = 'S_TCODE';
             actionValue = action;
