@@ -1122,57 +1122,57 @@ async function tableExists(tableName) {
  * Returns the found/inserted elements, or throws an error if the source tables
  * source tables (yr_<realm>_user_complete_info / yr_<realm>_roles_infos) do not exist.
  */
-export async function searchAndAddSodRaElements(realm, elementType, pattern) {
-  const sourceTable = elementType === 'Roles'
-    ? `yr_${realm}_roles_infos`
-    : `yr_${realm}_user_complete_info`;
+ export async function searchAndAddSodRaElements(realm, elementType, pattern, includeInvalid = false) {
+   const sourceTable = elementType === 'Roles'
+     ? `yr_${realm}_roles_infos`
+     : `yr_${realm}_user_complete_info`;
 
-  if (!(await tableExists(sourceTable))) {
-    throw new Error('You must run the build additional infos function first');
-  }
+   if (!(await tableExists(sourceTable))) {
+     throw new Error('You must run the build additional infos function first');
+   }
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sod_ra_elements (
-      elementtype TEXT,
-      elementid TEXT PRIMARY KEY,
-      elementdescription TEXT
-    )
-  `);
-  // Migration: if the table already existed without the elementtype column, add it
-  await pool.query(`ALTER TABLE sod_ra_elements ADD COLUMN IF NOT EXISTS elementtype TEXT`);
+   await pool.query(`
+     CREATE TABLE IF NOT EXISTS sod_ra_elements (
+       elementtype TEXT,
+       elementid TEXT PRIMARY KEY,
+       elementdescription TEXT
+     )
+   `);
+   await pool.query(`ALTER TABLE sod_ra_elements ADD COLUMN IF NOT EXISTS elementtype TEXT`);
 
-  let rows;
-  if (elementType === 'Roles') {
-    const result = await pool.query(
-      `SELECT agr_name AS elementid, text AS elementdescription
-       FROM "${sourceTable}"
-       WHERE agr_name ILIKE $1`,
-      [pattern]
-    );
-    rows = result.rows;
-  } else {
-    const result = await pool.query(
-      `SELECT bname AS elementid,
-              TRIM(CONCAT(COALESCE(name_first, ''), ' ', COALESCE(name_last, ''))) AS elementdescription
-       FROM "${sourceTable}"
-       WHERE bname ILIKE $1
-         AND user_valid != 0`,
-      [pattern]
-    );
-    rows = result.rows;
-  }
+   let rows;
+   if (elementType === 'Roles') {
+     const result = await pool.query(
+       `SELECT agr_name AS elementid, text AS elementdescription
+        FROM "${sourceTable}"
+        WHERE agr_name ILIKE $1`,
+       [pattern]
+     );
+     rows = result.rows;
+   } else {
+     const validityClause = includeInvalid ? '' : 'AND user_valid != 0';
+     const result = await pool.query(
+       `SELECT bname AS elementid,
+               TRIM(CONCAT(COALESCE(name_first, ''), ' ', COALESCE(name_last, ''))) AS elementdescription
+        FROM "${sourceTable}"
+        WHERE bname ILIKE $1
+          ${validityClause}`,
+       [pattern]
+     );
+     rows = result.rows;
+   }
 
-  for (const row of rows) {
-    await pool.query(
-      `INSERT INTO sod_ra_elements (elementtype, elementid, elementdescription)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (elementid) DO UPDATE SET elementtype = EXCLUDED.elementtype, elementdescription = EXCLUDED.elementdescription`,
-      [elementType, row.elementid, row.elementdescription]
-    );
-  }
+   for (const row of rows) {
+     await pool.query(
+       `INSERT INTO sod_ra_elements (elementtype, elementid, elementdescription)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (elementid) DO UPDATE SET elementtype = EXCLUDED.elementtype, elementdescription = EXCLUDED.elementdescription`,
+       [elementType, row.elementid, row.elementdescription]
+     );
+   }
 
-  return { added: rows.length, elements: rows };
-}
+   return { added: rows.length, elements: rows };
+ }
 
 /**
  * Returns a page of rows from the sod_ra_elements table (empty if the table does not exist),
@@ -1197,6 +1197,68 @@ export async function clearSodRaElements() {
   const result = await pool.query(`DELETE FROM sod_ra_elements`);
   return { cleared: result.rowCount };
 }
+
+/**
+ * Import lines (elementtype, elementid, elementdescription) to table sod_ra_elements
+ * from a TSV file. Create table if does not exist.
+ */
+ export async function importSodRaElementsFromTxt(realm, txtContent, includeInvalid = false) {
+   const lines = txtContent.split(/\r?\n/).filter(l => l.trim().length > 0);
+   if (lines.length === 0) return { imported: 0, skipped: 0 };
+
+   await pool.query(`
+     CREATE TABLE IF NOT EXISTS sod_ra_elements (
+       elementtype TEXT,
+       elementid TEXT PRIMARY KEY,
+       elementdescription TEXT
+     )
+   `);
+   await pool.query(`ALTER TABLE sod_ra_elements ADD COLUMN IF NOT EXISTS elementtype TEXT`);
+
+   const header = lines[0].split('\t').map(h => h.trim().toLowerCase());
+   const idxType = header.indexOf('elementtype');
+   const idxId = header.indexOf('elementid');
+   const idxDesc = header.indexOf('elementdescription');
+   if (idxId === -1) throw new Error('Missing required column: elementid');
+
+   // validity check, as in searchAndAddSodRaElements, on yr_<realm>_user_complete_info table
+   const userTable = `yr_${realm}_user_complete_info`;
+   const userTableAvailable = !includeInvalid && await tableExists(userTable);
+
+   let imported = 0;
+   let skipped = 0;
+
+   for (let i = 1; i < lines.length; i++) {
+     const values = lines[i].split('\t');
+     const elementid = (values[idxId] || '').trim();
+     if (!elementid) continue;
+     const elementtype = idxType !== -1 ? (values[idxType] || '').trim() : '';
+     const elementdescription = idxDesc !== -1 ? (values[idxDesc] || '').trim() : '';
+
+     // same criteria of searchAndAddSodRaElements: Users only, filter user_valid != 0
+     if (!includeInvalid && elementtype === 'Users' && userTableAvailable) {
+       const check = await pool.query(
+         `SELECT 1 FROM "${userTable}" WHERE bname = $1 AND user_valid != 0 LIMIT 1`,
+         [elementid]
+       );
+       if (check.rows.length === 0) { skipped++; continue; }
+     }
+
+     try {
+       await pool.query(
+         `INSERT INTO sod_ra_elements (elementtype, elementid, elementdescription)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (elementid) DO UPDATE SET elementtype = EXCLUDED.elementtype, elementdescription = EXCLUDED.elementdescription`,
+         [elementtype, elementid, elementdescription]
+       );
+       imported++;
+     } catch (dbErr) {
+       console.error('[SOD RA Import] SQL error on row:', dbErr.message);
+     }
+   }
+
+   return { imported, skipped };
+ }
 
 /**
  * Internal helper: runs a query with language fallback realmLang → EN → DE → 'NULL'.

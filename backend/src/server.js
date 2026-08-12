@@ -35,6 +35,7 @@ import {
   searchAndAddSodRaElements,
   getSodRaElements,
   clearSodRaElements,
+  importSodRaElementsFromTxt,
   runSodAnalysis,
   importStatisticsFromTxt,
   getAggregatedUserStats,
@@ -786,7 +787,7 @@ app.post('/api/sod/add-element', async (req, res) => {
     const realm = String(req.body?.realm || '').trim();
     const elementType = String(req.body?.elementType || '').trim();
     const pattern = String(req.body?.pattern || '').trim();
-
+    const includeInvalid = req.body?.includeInvalid === true;
     if (!realm || !elementType || !pattern) {
       res.status(400).json({ ok: false, error: 'realm, elementType and pattern are required' });
       return;
@@ -795,14 +796,10 @@ app.post('/api/sod/add-element', async (req, res) => {
       res.status(400).json({ ok: false, error: 'elementType must be Users or Roles' });
       return;
     }
-
-    const result = await searchAndAddSodRaElements(realm, elementType, pattern);
+    const result = await searchAndAddSodRaElements(realm, elementType, pattern, includeInvalid);
     res.json({ ok: true, ...result });
   } catch (error) {
-    res.status(500).json({
-      ok: false,
-      error: error?.message || 'Failed to add SOD element'
-    });
+    res.status(500).json({ ok: false, error: error?.message || 'Failed to add SOD element' });
   }
 });
 
@@ -829,6 +826,22 @@ app.post('/api/sod/clear-elements', async (req, res) => {
       ok: false,
       error: error?.message || 'Failed to clear SOD RA elements'
     });
+  }
+});
+
+app.post('/api/sod/import-ra-elements-txt', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    const txtContent = String(req.body?.txtContent || '').trim();
+    const includeInvalid = req.body?.includeInvalid === true;
+    if (!realm || !txtContent) {
+      res.status(400).json({ ok: false, error: 'realm and txtContent are required' });
+      return;
+    }
+    const result = await importSodRaElementsFromTxt(realm, txtContent, includeInvalid);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message || 'Failed to import SOD RA elements' });
   }
 });
 

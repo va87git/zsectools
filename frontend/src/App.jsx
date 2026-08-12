@@ -125,6 +125,7 @@ export default function App() {
   const [sodAddElementLoading, setSodAddElementLoading] = useState(false);
   const [sodAddElementMsg, setSodAddElementMsg] = useState('');
   const [sodAddElementErr, setSodAddElementErr] = useState('');
+  const [sodIncludeInvalid, setSodIncludeInvalid] = useState(false);
   const [sodRaElements, setSodRaElements] = useState([]);
   const [sodRaElementsLoading, setSodRaElementsLoading] = useState(false);
   const [sodRaElementsPage, setSodRaElementsPage] = useState(0);
@@ -144,6 +145,8 @@ export default function App() {
   const [sodDeleteLoading, setSodDeleteLoading] = useState(false);
   const [sodDeleteMsg, setSodDeleteMsg] = useState('');
   const [sodDeleteErr, setSodDeleteErr] = useState('');
+  const sodElementsFileInputRef = useRef(null);
+  const [sodImportElementsLoading, setSodImportElementsLoading] = useState(false);
 
   // Reports section state
   const [selectedReport, setSelectedReport] = useState('');
@@ -316,7 +319,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       const result = await fetchJson('/api/sap-realms');
       const loadedRealms = result.realms || [];
       setRealms(loadedRealms);
-      
+
       // Removed: automatic selection of the first realm.
       // Now the user must explicitly select it from the sidebar.
     } catch (err) {
@@ -335,7 +338,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
     try {
       const result = await fetchJson(`/api/sap-realms/${encodeURIComponent(realm)}`);
       const cfg = result.config;
-      
+
       // Format realm_reference_date to YYYY-MM-DD for date input
       let formattedDate = '';
       if (cfg.realm_reference_date) {
@@ -344,7 +347,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
           formattedDate = date.toISOString().split('T')[0];
         }
       }
-      
+
       setForm({
         realm: cfg.realm || '',
         realm_description: cfg.realm_description || '',
@@ -424,7 +427,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       for (let i = 0; i < selectedTables.length; i++) {
         const tableName = selectedTables[i];
         setImportProgress({ current: i + 1, total: selectedTables.length, currentTable: tableName });
-        
+
         try {
           const result = await fetchJson('/api/import-sap/tables', {
             method: 'POST',
@@ -435,7 +438,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
           results.push({ tableName, success: false, rowCount: 0, error: err.message });
         }
       }
-      
+
       const successes = results.filter(r => r.success);
       const failures = results.filter(r => !r.success);
 
@@ -446,7 +449,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       if (failures.length > 0) {
         msg += `Failed: ${failures.map(f => `${f.tableName} (${f.error})`).join(', ')}. `;
       }
-      
+
       setImportMsg(msg || 'Import completed with no results.');
     } catch (err) {
       setImportErr(err.message);
@@ -465,7 +468,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
   setImportLoading(true);
   setImportErr('');
   setImportMsg('');
-  
+
   // Array of query names
   const queryNames = [
     'Dropping tables',
@@ -480,10 +483,10 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
   let currentStep = 0;
   const progressInterval = setInterval(() => {
     if (currentStep < queryNames.length) {
-      setImportProgress({ 
-        current: currentStep, 
-        total: queryNames.length, 
-        currentTable: queryNames[currentStep] 
+      setImportProgress({
+        current: currentStep,
+        total: queryNames.length,
+        currentTable: queryNames[currentStep]
       });
       currentStep++;
     }
@@ -496,15 +499,15 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ realm: selectedRealm.trim() })
     });
-    
+
     clearInterval(progressInterval);
-    
+
     const result = await response.json();
     if (result.ok) {
-      setImportProgress({ 
-        current: queryNames.length, 
-        total: queryNames.length, 
-        currentTable: 'Completed!' 
+      setImportProgress({
+        current: queryNames.length,
+        total: queryNames.length,
+        currentTable: 'Completed!'
       });
       setImportMsg('Additional infos built successfully!');
     } else {
@@ -536,9 +539,9 @@ async function handleRfcSelection(rfcCommand) {
 
   //check if default (empty) value is selected (do nothing)
   if (!rfcCommand) {
-    return; 
+    return;
   }
-  
+
   try {
     const data = await fetchJson(`/api/rfc/schema/${rfcCommand}`);
     setRfcSchema(data.schema);
@@ -550,18 +553,18 @@ async function handleRfcSelection(rfcCommand) {
 async function handleRfcFileUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
-  
+
   setRfcError('');
   setRfcMsg('');
-  
+
   try {
     const text = await file.text();
     const lines = text.split('\n');
     const rows = [];
-    
+
     // Assume the first row is the header
     const headers = lines[0].split('\t').map(h => h.trim());
-    
+
     for (let i = 1; i < lines.length; i++) {
       if (lines[i].trim()) {
         const values = lines[i].split('\t');
@@ -572,24 +575,24 @@ async function handleRfcFileUpload(e) {
         rows.push(row);
       }
     }
-    
+
     setRfcPreviewRows(rows);
 
         // --- ADDED BLOCK: VERIFIES BAPI SCHEMA AGAINST THE CSV ---
     if (rfcSchema) {
       const required = rfcSchema.requiredFields || [];
       const missing = required.filter(field => !headers.includes(field));
-      
+
       if (missing.length > 0) {
         setRfcError(`Schema mismatch: Mancano le colonne obbligatorie: ${missing.join(', ')}`);
         setRfcPreviewRows([]); // Clear the preview if it is not valid
-        return; 
+        return;
       }
     }
     // --- END ADDING ---
 
     e.target.value = ''; //added this line to reset the file input so it can be re-read if the same file is reselected
-    
+
     setRfcMsg(`Loaded ${rows.length} rows from file: ${file.name}`);
   } catch (err) {
     setRfcError(`File upload error: ${err.message}`);
@@ -601,23 +604,23 @@ async function executeRfcBatch() {
     setRfcError('Select a realm first');
     return;
   }
-  
+
   if (!selectedRfc) {
     setRfcError('Select an RFC command first');
     return;
   }
-  
+
   if (rfcPreviewRows.length === 0) {
     setRfcError('No rows to execute');
     return;
   }
-  
+
   setRfcExecuting(true);
   setRfcError('');
   setRfcMsg('');
   setRfcResults([]);
   setRfcProgress({ current: 0, total: rfcPreviewRows.length, currentRow: '' });
-  
+
   try {
     const result = await fetchJson('/api/rfc/execute-batch', {
       method: 'POST',
@@ -627,12 +630,12 @@ async function executeRfcBatch() {
         rows: rfcPreviewRows
       })
     });
-    
+
     setRfcResults(result.results || []);
-    
+
     const successes = result.results.filter(r => r.status === 'success').length;
     const failures = result.results.filter(r => r.status === 'error').length;
-    
+
     setRfcMsg(`Execution completed: ${successes} success, ${failures} failed`);
   } catch (err) {
     setRfcError(err.message);
@@ -655,7 +658,7 @@ async function executeRfcBatch() {
   async function deleteSelectedStatsBatch() {
     if (!selectedStatsBatch || !selectedRealm.trim()) return;
     if (!confirm(`Delete statistics batch?\nPeriod: ${selectedStatsBatch.period_type}\nDate: ${selectedStatsBatch.selected_at}\nRows: ${selectedStatsBatch.row_count}`)) return;
-    
+
     try {
       const result = await fetchJson('/api/import-sap/user-statistics/batch', {
         method: 'DELETE',
@@ -801,8 +804,8 @@ async function executeRfcBatch() {
         const response = await fetch(`${API_BASE}/api/export-sap/statistics-txt`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            realm: selectedRealm.trim(), 
+          body: JSON.stringify({
+            realm: selectedRealm.trim(),
             selectedAt: selectedStatsBatch.selected_at,
             periodType: selectedStatsBatch.period_type
           })
@@ -835,13 +838,13 @@ async function executeRfcBatch() {
         // Export all batches if none selected - get aggregated list first
         const aggResult = await fetchJson('/api/import-sap/user-statistics/aggregated?realm=' + encodeURIComponent(selectedRealm.trim()));
         const batches = aggResult.stats || [];
-        
+
         for (const batch of batches) {
           const response = await fetch(`${API_BASE}/api/export-sap/statistics-txt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              realm: selectedRealm.trim(), 
+            body: JSON.stringify({
+              realm: selectedRealm.trim(),
               selectedAt: batch.selected_at,
               periodType: batch.period_type
             })
@@ -898,10 +901,10 @@ async function executeRfcBatch() {
     setImportTxtLoading(true);
     try {
       const text = await file.text();
-      
+
       // DO NOT filter rows here! Send whole file to backend.
       // The backend already knows how to extract the table name and types from the comments.
-      
+
       // Extract the table name from the file (optional, if you want to use it for the API)
       const lines = text.split(/\r?\n/);
       let tableName = null;
@@ -921,7 +924,7 @@ async function executeRfcBatch() {
         // Send whole original text ('text')
         body: JSON.stringify({ realm: selectedRealm.trim(), tableName, txtContent: text })
       });
-      
+
       setImportMsg(`Imported ${result.imported} rows from ${tableName}`);
     } catch (err) {
       setImportErr(err.message);
@@ -953,7 +956,7 @@ async function executeRfcBatch() {
         // Filter out comment lines
         //const dataLines = text.split('\n').filter(line => !line.startsWith('#') && line.trim());
         const dataLines = text.split('\n');
-        
+
         if (dataLines.length < 1) {
           throw new Error('Invalid TXT format: no data found');
         }
@@ -982,7 +985,7 @@ async function executeRfcBatch() {
     setReportError('Select a realm first');
     return;
   }
-  
+
   const tableNameToUse = overrideTableName || reportTableName;
   if (!tableNameToUse) {
     setReportError('No report table available. Execute a report first.');
@@ -1019,7 +1022,7 @@ async function executeRfcBatch() {
     setReportError('');
     setReportRows([]);
     setReportHeaders([]);
-    
+
     if (!selectedRealm.trim()) {
       setReportError('Select a realm first');
       return;
@@ -1028,7 +1031,7 @@ async function executeRfcBatch() {
       setReportError('Select a report first');
       return;
     }
-    
+
     try {
       const result = await fetchJson('/api/reports/execute', {
         method: 'POST',
@@ -1040,7 +1043,7 @@ async function executeRfcBatch() {
           rolePattern: reportPattern
         })
       });
-      
+
       if (result.ok) {
         setReportError('');
         setReportTableName(result.tableName || result.table);
@@ -1204,8 +1207,8 @@ async function executeRfcBatch() {
                 <li key={item.realm} style={{ marginBottom: '8px' }}>
                   <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Load</button>
                   <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>
-                  <button 
-                    style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }} 
+                  <button
+                    style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }}
                     onClick={async () => {
                       if (!confirm(`Delete realm "${item.realm}"? This cannot be undone.`)) return;
                       try {
@@ -1240,18 +1243,18 @@ async function executeRfcBatch() {
           <div style={panelStyle}>
             <h3>Select Report</h3>
             <label style={{ display: 'block', marginBottom: 6 }}>Report</label>
-            <select 
-  value={selectedReport} 
-  onChange={async (e) => { 
+            <select
+  value={selectedReport}
+  onChange={async (e) => {
     const val = e.target.value;
     setSelectedReport(val);  // Update state
-    setReportRows([]); 
-    setReportHeaders([]); 
-    setReportPage(0); 
-    setReportTotal(0); 
+    setReportRows([]);
+    setReportHeaders([]);
+    setReportPage(0);
+    setReportTotal(0);
     setReportError('');
     setReportTableName('');
-    
+
     if (val && selectedRealm) {
   const tableName = `yreport_${selectedRealm.toLowerCase()}_${val.toLowerCase()}`;
   setReportTableName(tableName);
@@ -1265,15 +1268,15 @@ async function executeRfcBatch() {
                 <option key={report.id} value={report.id}>{report.name}</option>
               ))}
             </select>
-            
+
             {selectedReport === 'USER01' && (
               <>
                 <label style={{ display: 'block', marginBottom: 6 }}>Days</label>
-                <input 
-                  type="number" 
-                  value={reportDays} 
-                  onChange={(e) => setReportDays(Number(e.target.value))} 
-                  min="1" 
+                <input
+                  type="number"
+                  value={reportDays}
+                  onChange={(e) => setReportDays(Number(e.target.value))}
+                  min="1"
                   max="365"
                   style={{ width: '100%', marginBottom: 12 }}
                 />
@@ -1289,8 +1292,8 @@ async function executeRfcBatch() {
                       <br />
                       • <strong>_ (underscore)</strong>: like + in SAP, represents a single character.
                       </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
@@ -1308,8 +1311,8 @@ async function executeRfcBatch() {
                       <br />
                       • <strong>_ (underscore)</strong>: like + in SAP, represents a single character.
                       </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
@@ -1327,8 +1330,8 @@ async function executeRfcBatch() {
                       <br />
                       • <strong>_ (underscore)</strong>: like + in SAP, represents a single character.
                       </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
@@ -1346,8 +1349,8 @@ async function executeRfcBatch() {
                       <br />
                       • <strong>_ (underscore)</strong>: like + in SAP, represents a single character.
                       </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
@@ -1356,8 +1359,8 @@ async function executeRfcBatch() {
               </>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <button 
-                style={{ padding: '8px 12px', cursor: 'pointer' }} 
+              <button
+                style={{ padding: '8px 12px', cursor: 'pointer' }}
                 disabled={!selectedRealm || !selectedReport}
                 onClick={executeReport}
               >
@@ -1369,22 +1372,22 @@ async function executeRfcBatch() {
           <div style={panelStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Report Results</h3>
-              <button 
-                style={{ 
-                  padding: '8px 12px', 
-                  cursor: 'pointer', 
-                  background: '#4caf50', 
-                  color: 'white', 
-                  border: 'none', 
+              <button
+                style={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  background: '#4caf50',
+                  color: 'white',
+                  border: 'none',
                   borderRadius: '4px'
-                }} 
+                }}
                 onClick={exportReport}
                 disabled={reportRows.length === 0}
               >
                 Export Report
               </button>
             </div>
-            
+
             {reportError ? <p style={{ color: 'crimson' }}>{reportError}</p> : null}
             {reportRows.length > 0 && reportHeaders.length > 0 ? (
               <div style={{ marginTop: 10 }}>
@@ -1468,22 +1471,22 @@ async function executeRfcBatch() {
             <h4 style={{ margin: 0, color: '#333' }}>Tables selection</h4>
             </div>
             <div style={{ marginBottom: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button 
-                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }} 
+              <button
+                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}
                 onClick={() => setSelectedTables(availableTables)}
                 disabled={!availableTables.length}
               >
                 Select All
               </button>
-              <button 
-                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }} 
+              <button
+                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}
                 onClick={() => setSelectedTables([])}
                 disabled={!selectedTables.length}
               >
                 Deselect All
               </button>
-              <button 
-  style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, background: '#e3f2fd', border: '1px solid #2196f3' }} 
+              <button
+  style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, background: '#e3f2fd', border: '1px solid #2196f3' }}
   onClick={buildAdditionalInfos}
   disabled={!selectedRealm || importLoading}
 >
@@ -1495,8 +1498,8 @@ async function executeRfcBatch() {
                 <input type="checkbox" checked={selectedTables.includes(tableName)} onChange={() => toggleTable(tableName)} /> {tableName}
               </label>
             ))}
-            
-            
+
+
           </div>
 
           <div style={panelStyle}>
@@ -1561,7 +1564,7 @@ async function executeRfcBatch() {
                 </div>
               )}
               {selectedStatsBatch && (
-                <button 
+                <button
                   style={{ marginTop: 8, padding: '6px 12px', cursor: 'pointer', background: '#ffebee', border: '1px solid #c62828', color: '#c62828' }}
                   onClick={deleteSelectedStatsBatch}
                 >
@@ -1637,7 +1640,7 @@ async function executeRfcBatch() {
   setRfcError('');          // empty errors
   setRfcMsg('');            // Empty success messages
   setRfcFile(null);         // Reset file reference
-  
+
   // Note: the <input type="file"> element in the HTML will keep showing the old file name,
   // but since rfcPreviewRows is empty, the app will behave as if nothing was selected.
 
@@ -1646,7 +1649,7 @@ async function executeRfcBatch() {
   }
 };
       // Use a safety check to make sure rfcResults is an array
-  const displayResults = Array.isArray(rfcResults) 
+  const displayResults = Array.isArray(rfcResults)
     ? (() => {
         const rows = [];
 
@@ -1679,13 +1682,13 @@ async function executeRfcBatch() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 1200 }}>
-        
+
         {/* Left: RFC Selection and upload */}
         <div style={panelStyle}>
           <h3>RFC Configuration</h3>
-          
+
           <label style={{ display: 'block', marginBottom: 6 }}>Select RFC Command</label>
-          <select 
+          <select
             value={selectedRfc}
             onChange={(e) => handleRfcSelection(e.target.value)}
             style={{ width: '100%', marginBottom: 12 }}
@@ -1696,7 +1699,7 @@ async function executeRfcBatch() {
               <option key={rfc.id} value={rfc.id}>{rfc.name}</option>
             ))}
           </select>
-          
+
           {rfcSchema && (
             <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
               <p><strong>Required Fields:</strong> {rfcSchema.requiredFields.join(', ')}</p>
@@ -1705,22 +1708,53 @@ async function executeRfcBatch() {
               )}
             </div>
           )}
-          
+
+          {rfcSchema && rfcSchema.examples && (
+                      <div style={{ background: '#eef6ff', padding: 12, borderRadius: 4, marginBottom: 12, border: '1px solid #cfe3ff' }}>
+                        <p style={{ marginTop: 0 }}><strong>Examples</strong></p>
+                        {rfcSchema.examples.note && (
+                          <p style={{ fontSize: 12, color: '#555', whiteSpace: 'pre-line' }}>{rfcSchema.examples.note}</p>
+                        )}
+                        {Array.isArray(rfcSchema.examples.header) && Array.isArray(rfcSchema.examples.rows) && (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
+                              <thead>
+                                <tr style={{ background: '#dbeafe' }}>
+                                  {rfcSchema.examples.header.map((h) => (
+                                    <th key={h} style={{ border: '1px solid #cbd5e1', padding: '4px 8px', textAlign: 'left' }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rfcSchema.examples.rows.map((row, idx) => (
+                                  <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f4f9ff' }}>
+                                    {row.map((val, vidx) => (
+                                      <td key={vidx} style={{ border: '1px solid #cbd5e1', padding: '4px 8px' }}>{val}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
           <label style={{ display: 'block', marginBottom: 6 }}>Upload CSV/TSV File</label>
-          <input 
+          <input
             ref={rfcFileInputRef} // Added to reset the input
             type="file"
             accept=".csv,.tsv,.txt"
             onChange={handleRfcFileUpload}
             disabled={!selectedRfc}
-            style={{ 
+            style={{
             marginBottom: 12,
-            width: '100px',        
-            overflow: 'hidden',    
+            width: '100px',
+            overflow: 'hidden',
             color: 'transparent'   // Makes the remaining text transparent for safety across browsers
             }}
           />
-          
+
           <button
             onClick={executeRfcBatch}
             disabled={!selectedRealm || !selectedRfc || rfcPreviewRows.length === 0 || rfcExecuting}
@@ -1737,7 +1771,7 @@ async function executeRfcBatch() {
             {rfcExecuting ? 'Executing...' : 'Execute RFC Batch'}
           </button>
         </div>
-        
+
         {/* Right: Preview and results */}
         <div style={panelStyle}>
           <h3>Preview & Results</h3>
@@ -1760,7 +1794,7 @@ async function executeRfcBatch() {
           Input reset
         </button>
         {/* --- END BLOCK ADDED --- */}
-          
+
           {rfcPreviewRows.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <p style={{ color: '#666', fontSize: 13 }}>
@@ -1792,7 +1826,7 @@ async function executeRfcBatch() {
               </div>
             </div>
           )}
-          
+
           {rfcExecuting && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ background: '#e0e0e0', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
@@ -1808,7 +1842,7 @@ async function executeRfcBatch() {
               </p>
             </div>
           )}
-          
+
           {displayResults.length > 0 && (
   <div>
     <h4>Results</h4>
@@ -1838,7 +1872,7 @@ async function executeRfcBatch() {
   </div>
 )}
         </div>
-        
+
       </div>
     </>
   );
@@ -2059,7 +2093,8 @@ async function executeRfcBatch() {
         body: JSON.stringify({
           realm: selectedRealm.trim(),
           elementType: sodElementType,
-          pattern: sodElementId.trim()
+          pattern: sodElementId.trim(),
+          includeInvalid: sodIncludeInvalid
         })
       });
       setSodAddElementMsg(`Added/updated ${result.added} element(s) matching "${sodElementId.trim()}"`);
@@ -2068,6 +2103,32 @@ async function executeRfcBatch() {
       setSodAddElementErr(err.message);
     } finally {
       setSodAddElementLoading(false);
+    }
+  }
+
+  async function handleSodElementsFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSodAddElementErr('');
+    setSodAddElementMsg('');
+    setSodImportElementsLoading(true);
+    try {
+      const txtContent = await file.text();
+      const result = await fetchJson('/api/sod/import-ra-elements-txt', {
+        method: 'POST',
+        body: JSON.stringify({
+          realm: selectedRealm.trim(),
+          txtContent,
+          includeInvalid: sodIncludeInvalid
+        })
+      });
+      setSodAddElementMsg(`Imported ${result.imported} element(s) from file: ${file.name}`);
+      loadSodRaElements();
+    } catch (err) {
+      setSodAddElementErr(err.message);
+    } finally {
+      setSodImportElementsLoading(false);
+      e.target.value = ''; // reset per poter ricaricare lo stesso file
     }
   }
 
@@ -2201,7 +2262,7 @@ async function executeRfcBatch() {
     const headers = Object.keys(sodResults[0]);
     const csvRows = [
       headers.join('\t'), // Header
-      ...sodResults.map(row => 
+      ...sodResults.map(row =>
         headers.map(fieldName => {
           const val = row[fieldName] ?? '';
           return `"${String(val).replace(/"/g, '""')}"`;
@@ -2211,21 +2272,21 @@ async function executeRfcBatch() {
 
     // 2. Create BLOB (file in memory)
     const blob = new Blob(['\uFEFF', csvRows], { type: 'text/csv;charset=utf-8;' });
-    
+
     // 3. Create temporary link and click
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', 'sod_ra_results.csv');
-    
+
     // Add to document, click and remove
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     // Free memory
     window.URL.revokeObjectURL(url);
-    
+
   } catch (err) {
     console.error("Export error:", err);
     alert("Error while creating the file.");
@@ -2353,7 +2414,30 @@ async function executeRfcBatch() {
               onClick={addSodElement}
               disabled={sodAddElementLoading}
             >{sodAddElementLoading ? 'Adding...' : 'Add element'}</button>
-          </div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={sodIncludeInvalid}
+                  onChange={(e) => setSodIncludeInvalid(e.target.checked)}
+                />
+                consider also invalid/locked users
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
+                <span style={labelStyle}>Upload CSV/TSV File</span>
+                <input
+                  ref={sodElementsFileInputRef}
+                  type="file"
+                  accept=".csv,.tsv,.txt"
+                  onChange={handleSodElementsFileUpload}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  style={btnStyle('#555')}
+                  onClick={() => sodElementsFileInputRef.current && sodElementsFileInputRef.current.click()}
+                  disabled={sodImportElementsLoading}
+                >{sodImportElementsLoading ? 'Importing...' : 'Import elements'}</button>
+              </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', marginTop: 16 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Analysis Level</label>
@@ -2528,9 +2612,9 @@ async function executeRfcBatch() {
         <div>
               {/* Aggiungi il banner qui */}
     <div style={{ marginBottom: '16px', textAlign: 'center' }}>
-      <img 
+      <img
         src={brandBanner}
-        alt="Brand Banner" 
+        alt="Brand Banner"
         style={{ maxWidth: '100%', height: 'auto' }}
       />
     </div>
@@ -2544,7 +2628,7 @@ async function executeRfcBatch() {
             <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'sod' ? '#eee' : 'transparent', border: '1px solid #ccc' }} disabled={!selectedRealm} onClick={() => setSection('sod')}>SOD & Audit</button>
           </div>
         </div>
-        
+
         <div style={{ padding: '12px', borderTop: '1px solid #ddd', fontSize: '14px' }}>
           <div style={{ marginBottom: '8px' }}>
             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>Active SAP Realm:</label>
