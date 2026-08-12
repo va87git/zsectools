@@ -8,7 +8,17 @@ export const RFC_SCHEMAS = {
     requiredFields: ['ACTIVITY_GROUP', 'ACTIVITY_GROUP_TEXT'],
     optionalFields: [],
     description: 'Create a composite SAP role',
-    fixedValues: { COLLECTIVE_AGR: 'X' }
+    fixedValues: { COLLECTIVE_AGR: 'X' },
+    examples: {
+      // introduction text
+      note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+      // header and examples
+      header: ['ACTIVITY_GROUP', 'ACTIVITY_GROUP_TEXT'],
+      rows: [
+        ['ZC:ACCPAY', 'Accounts Payable'],
+        ['ZC:BUYER', 'Buyer']
+      ]
+    }
   },
   'RFC_create_single': {
     name: 'Create Single Role',
@@ -16,7 +26,17 @@ export const RFC_SCHEMAS = {
     requiredFields: ['ACTIVITY_GROUP', 'ACTIVITY_GROUP_TEXT'],
     optionalFields: [],
     description: 'Create a single SAP role',
-    fixedValues: {}
+    fixedValues: {},
+    examples: {
+      // introduction text
+      note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+      // header and examples
+      header: ['ACTIVITY_GROUP', 'ACTIVITY_GROUP_TEXT'],
+      rows: [
+        ['ZS:MATERIAL-MD', 'Material Master Data'],
+        ['ZS:CUST-MD', 'Customer Master Data']
+      ]
+    }
   },
     'RFC_add_single_to_composite': {
     name: 'Add Single Role to Composite Role',
@@ -27,7 +47,18 @@ export const RFC_SCHEMAS = {
     fixedValues: {},
       tables: {
       'ACTIVITY_GROUPS': 'AGR_NAME'
-    }
+      },
+      examples: {
+        // introduction text
+        note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+        // header and examples
+        header: ['ACTIVITY_GROUP (Composite Role)', 'ACTIVITY_GROUPS (Single Roles)'],
+        rows: [
+          ['ZC:ACCPAY', 'ZS:CUST-MD'],
+          ['ZC:ACCPAY', 'ZS:CUST-MD'],
+          ['ZC:BUYER', 'ZS:CUST-MD']
+        ]
+      }
   },
       'RFC_remove_single_from_composite': {
     name: 'Remove Single Role from Composite Role',
@@ -39,7 +70,18 @@ export const RFC_SCHEMAS = {
       tables: {
       'ACTIVITY_GROUPS': 'AGR_NAME'
     },
-    successIndicator: { field: 'ACTIVITY_GROUPS', nonEmpty: true }
+        successIndicator: { field: 'ACTIVITY_GROUPS', nonEmpty: true },
+        examples: {
+          // introduction text
+          note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+          // header and examples
+          header: ['ACTIVITY_GROUP (Composite Role)', 'ACTIVITY_GROUPS (Single Roles)'],
+          rows: [
+            ['ZC:ACCPAY', 'ZS:CUST-MD'],
+            ['ZC:ACCPAY', 'ZS:CUST-MD'],
+            ['ZC:BUYER', 'ZS:CUST-MD']
+          ]
+        }
   },
         'RFC_delete_role': {
     name: 'Delete Role',
@@ -48,9 +90,20 @@ export const RFC_SCHEMAS = {
     optionalFields: [],
     description: 'Delete Role',
     fixedValues: {ENQUEUE_AND_TRANSPORT: ' ',
-                 SHOW_DIALOG: ' '}
+                 SHOW_DIALOG: ' '},
+    examples: {
+      // introduction text
+      note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+      // header and examples
+      header: ['ACTIVITY_GROUP'],
+      rows: [
+        ['ZC:ACCPAY'],
+        ['ZS:CUST-MD'],
+        ['ZC:BUYER']
+      ]
+    }
   },
-        'RFC_add_role_to_user': {
+  'RFC_add_role_to_user': {
     name: 'Add roles to users',
     bapi: 'PRGN_RFC_CHANGE_USERS_IN_AGRS',
     requiredFields: ['AGR_NAME', 'UNAME', 'FROM_DAT', 'TO_DAT'],
@@ -59,6 +112,17 @@ export const RFC_SCHEMAS = {
     fixedValues: {},
       tables: {
       'ADD_USERS_TO_ACTGROUPS': ['AGR_NAME', 'UNAME', 'FROM_DAT', 'TO_DAT']
+    },
+    examples: {
+      // introduction text
+      note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+      // header and examples
+      header: ['AGR_NAME', 'UNAME', 'FROM_DAT (YYYYMMDD)', 'TO_DAT (YYYYMMDD)'],
+      rows: [
+        ['ZC:ACCPAY', 'JDOE', '20260530', '99991231'],
+        ['ZC:ACCPAY', 'JDOE', '20260530', '99991231'],
+        ['ZC:BUYER', 'BSMITH', '20230422', '20280924']
+      ]
     }
   },
         'RFC_del_role_from_user': {
@@ -70,7 +134,18 @@ export const RFC_SCHEMAS = {
     fixedValues: {},
     tables: {
       'DELETE_USERS_FROM_ACTGROUPS': ['AGR_NAME', 'UNAME', 'FROM_DAT', 'TO_DAT']
-    }
+          },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.\n\nATTENTION: "Date from" and "date to" must precisely match the values stored in SAP for each specific role-user assignment, or the record will be skipped.',
+            // header and examples
+            header: ['AGR_NAME', 'UNAME', 'FROM_DAT (YYYYMMDD)', 'TO_DAT (YYYYMMDD)'],
+            rows: [
+              ['ZC:ACCPAY', 'JDOE', '20260530', '99991231'],
+              ['ZC:ACCPAY', 'JDOE', '20260530', '99991231'],
+              ['ZC:BUYER', 'BSMITH', '20230422', '20280924']
+            ]
+          }
   },
         'RFC_add_tcode_to_role': {
     name: 'Add tansactions to roles',
@@ -78,7 +153,18 @@ export const RFC_SCHEMAS = {
     requiredFields: ['ACTIVITY_GROUP', 'TCODE', 'TEXT_FOR_TCODE'],
     optionalFields: [],
     description: 'Add tansactions to roles',
-    fixedValues: { LOWERCASE: 'X' }
+          fixedValues: { LOWERCASE: 'X' },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['ACTIVITY_GROUP', 'TCODE', 'TEXT_FOR_TCODE (optional)'],
+            rows: [
+              ['ZS:CUST-MD', 'XD01', 'Create customer MD'],
+              ['ZS:CUST-MD', 'FD01', 'Leave empty to  get standard description (see next line)'],
+              ['ZS:CUST-MD', 'VD01', '']
+            ]
+          }
   },
         'RFC_del_tcode_from_role': {
     name: 'Remove tansactions from roles',
@@ -86,10 +172,21 @@ export const RFC_SCHEMAS = {
     requiredFields: ['ACTIVITY_GROUP', 'TCODE'],
     optionalFields: [],
     description: 'Remove tansactions from roles',
-    fixedValues: {}
+          fixedValues: {},
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['ACTIVITY_GROUP', 'TCODE'],
+            rows: [
+              ['ZS:CUST-MD', 'XD01'],
+              ['ZS:CUST-MD', 'FD01'],
+              ['ZS:CUST-MD', 'VD01']
+            ]
+          }
   },
         'RFC_create_user': {
-    name: 'Create Users (name attr)',
+    name: 'Create Users',
     bapi: 'BAPI_USER_CREATE',
     requiredFields: ['USERNAME', 'FIRSTNAME', 'LASTNAME', 'USTYP', 'CLASS', 'GLTGV', 'GLTGB', 'BAPIPWD'],
     optionalFields: [],
@@ -99,7 +196,17 @@ export const RFC_SCHEMAS = {
     'ADDRESS': ['FIRSTNAME', 'LASTNAME'],
     'LOGONDATA': ['USTYP', 'CLASS', 'GLTGV', 'GLTGB'],
     'PASSWORD': ['BAPIPWD']
-    }
+          },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['USERNAME', 'FIRSTNAME', 'LASTNAME', 'USTYP', 'CLASS (user group)', 'GLTGV (valid from)', 'GLTGB (valid to)', 'BAPIPWD (PASSWORD)'],
+            rows: [
+              ['JDOE', 'John', 'Doe', 'A', 'EMPL-BNK', '20250331', '99991231', 'Init1234!'],
+              ['BSMITH', 'Bob', 'Smith', 'S', 'SUPER', '20280425', '20300627', 'Init1234!']
+            ]
+          }
   },
         'RFC_change_email_user': {
     name: 'Change Users email',
@@ -116,7 +223,17 @@ export const RFC_SCHEMAS = {
   },
     tables: {
       'ADDSMTP': ['E_MAIL']
-    }
+          },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['USERNAME', 'E_MAIL'],
+            rows: [
+              ['JDOE', 'j.doe@acmespa.com'],
+              ['BSMITH', 'b.smith@acmespa.com']
+            ]
+          }
   },
         'RFC_change_SNC_user': {
     name: 'Change Users SNC string',
@@ -132,7 +249,17 @@ export const RFC_SCHEMAS = {
     structureFixedValues: {
       'SNCX': { 'PNAME': 'X',
               'GUIFLAG': 'X'}
-    }
+          },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['USERNAME', 'PNAME', 'GUIFLAG (allow password logon)'],
+            rows: [
+              ['JDOE', 'p:CN=JDOE@ACMESPA.COM', 'X'],
+              ['BSMITH', 'p:CN=BSMITH@ACMESPA.COM' , '']
+            ]
+          }
   },
         'RFC_reset_password_user': {
     name: 'Reset password Users',
@@ -147,7 +274,17 @@ export const RFC_SCHEMAS = {
     },
     structureFixedValues: {
       'PASSWORDX': { 'BAPIPWD': 'X' }
-    }
+          },
+          examples: {
+            // introduction text
+            note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+            // header and examples
+            header: ['USERNAME', 'BAPIPWD'],
+            rows: [
+              ['JDOE', 'pass123'],
+              ['BSMITH', 'ChangeMe27!']
+            ]
+          }
   }
 };
 
@@ -297,7 +434,7 @@ export async function readSapTable(config, tableName, fieldsToSelect = [], rowsk
   const client = new nodeRfc.Client(config);
   try {
     await client.open();
-    
+
     const rfcOptions = {
       QUERY_TABLE: tableName,
       DELIMITER: delimiter,
@@ -425,14 +562,14 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
 
         if (parameters[field] !== undefined && parameters[field] !== null) {
           let val = parameters[field];
-          
+
           // Fix empty dates for structures
           if (typeof val === 'string' && val.trim() === '') {
             if (field.includes('_DAT') || field === 'GLTGV' || field === 'GLTGB') {
               val = '00000000';
             }
           }
-          
+
           structRow[field] = val;
           hasStructData = true;
         }
@@ -447,7 +584,7 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
   //========================================================================
   //END OF STRUCTURE HANDLING
   //========================================================================
-  
+
   // Keep track of which fields end up in tables so they are NOT copied at root level
   const fieldsConsumedByTables = new Set();
 
@@ -465,30 +602,30 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
 
         if (Array.isArray(rawValue)) {
           combinedParams[tableName] = rawValue;
-        } 
+        }
         else {
           const row = {};
           let hasData = false;
-          
+
           for (const field of definition) {
             if (parameters[field] !== undefined && parameters[field] !== null) {
               let val = parameters[field];
-              
+
               // Fix empty dates
               if (typeof val === 'string' && val.trim() === '') {
                 if (field.includes('_DAT') || field === 'GLTGV' || field === 'GLTGB') {
                   val = '00000000';
                 }
               }
-              
+
               row[field] = val;
               hasData = true;
             }
           }
-          
+
           combinedParams[tableName] = hasData ? [row] : [];
         }
-      } 
+      }
       // CASE B: Simple table (e.g.: 'ACTIVITY_GROUP')
       else if (typeof definition === 'string') {
         fieldsConsumedByTables.add(definition);
@@ -522,7 +659,7 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
 
   try {
     await client.open();
-    
+
     const result = await client.call(schema.bapi, combinedParams);
 
     const sapReturn = result.RETURN !== undefined ? result.RETURN : (result.RESULT !== undefined ? result.RESULT : result.ERRORS);
@@ -584,11 +721,11 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
     } catch (commitErr) {
       console.error('[SAP RFC] Error during BAPI_TRANSACTION_COMMIT:', commitErr.message);
     }
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       message: `RFC ${rfcCommand} executed successfully`,
-      data: result 
+      data: result
     };
   } catch (err) {
     console.error(`[SAP RFC ERROR] Critical execution error: ${err.message}`);
