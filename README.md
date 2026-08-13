@@ -28,6 +28,8 @@
 
 ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), and perform SOD risk analysis against a configurable rule matrix.
 
+**Local-First & Client-Side**: This application runs 100% locally on your machine. When connecting to SAP systems (even remotely via VPN), it performs the necessary table extractions strictly within your workstation's secure boundary. It acts as an automated assistant for tasks you would normally execute manually; consequently, data protection and security remain entirely the user's responsibility, exactly as with manual SAP extractions.
+
 The tool was originally developed for personal use to support day-to-day SAP security administration and SOD analysis work. It is now shared as open source in the hope that it can be useful to others facing similar needs. Contributions, bug reports, and suggestions are very welcome.
 
 ## Disclaimer
@@ -139,7 +141,6 @@ In all cases (manual run, service, or Docker), the application is served on **`h
 ## Known Issues / Missing Features
 
 - **Translations are not parameterized**: the UI language is hard-coded to English.
-- **Some useful UI elements are still missing**, e.g. a button to import SOD elements to be analyzed from a file.
 - **The user interface is very basic**, with no theming support. Dark mode support is planned for a future release.
 - **Environment variables and settings management is incomplete or inconsistent**, and is currently scattered across multiple files.
 - **Some configuration details are not easily parameterizable**, for example the frontend port.
@@ -148,6 +149,8 @@ In all cases (manual run, service, or Docker), the application is served on **`h
 ## SOD Analysis Accuracy
 
 ZSecTools is not an official SAP product, and its SOD analysis engine is not certified against any standard. Results should be considered **indicative** rather than authoritative. Personal testing has produced consistently correct results so far, but differences or bugs compared to dedicated commercial GRC/SOD products may still emerge. Always validate critical findings before relying on them for compliance or audit purposes.
+
+**Sample Ruleset Included**: sodMatrixExample.zip is a simple "ready-to-go" ruleset. It is not enough for a complete SOD self assessment. This is done on purpose because some rulesets are protected by copyright and/or completely different based on specific process/business needs.
 
 ## User Guide
 
