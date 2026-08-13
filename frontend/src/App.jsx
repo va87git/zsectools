@@ -64,6 +64,7 @@ export default function App() {
   const [section, setSection] = useState('sap-realms');
   const [selectedRealm, setSelectedRealm] = useState('');
   const [settingsTab, setSettingsTab] = useState('general'); // 'general' | 'health'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [appHealth, setAppHealth] = useState(null);
   const [dbHealth, setDbHealth] = useState(null);
@@ -172,7 +173,7 @@ export default function App() {
     { id: 'USER01', name: 'USER01 - Users never logged on in the last XX days' },
     { id: 'USER02', name: 'USER02 - Active users with SAP_ALL and SAP_NEW' },
     { id: 'USER03', name: 'USER03 - Active users with manually assigned profiles' },
-    { id: 'USER04', name: 'USER04 - List of system users (active or not)' },
+    { id: 'USER04', name: 'USER04 - All users' },
     { id: 'ROLE01', name: 'ROLE01 - Role Composite-Single-Transactions' },
     { id: 'ROLE02', name: 'ROLE02 - Role Single - Transactions in menu (task library)' },
     { id: 'ROLE03', name: 'ROLE03 - Roles with organizational levels entered manually' },
@@ -181,7 +182,7 @@ export default function App() {
     { id: 'ROLE06', name: 'ROLE06 - Roles assigned to users' },
     { id: 'ROLE07', name: 'ROLE07 - Roles Composite-Single-Tcd (Menu)' },
     { id: 'ROLE08', name: 'ROLE08 - Roles assigned to users (hierarchical)' },
-    { id: 'ROLE09', name: 'ROLE09 - TODO: SU25 step 2C simulation' },
+    //{ id: 'ROLE09', name: 'ROLE09 - TODO: SU25 step 2C simulation' },
     { id: 'STAT01', name: 'STAT01 - Statistics users-low details' },
     { id: 'STAT02', name: 'STAT02 - Statistics users-high details' }
   ];
@@ -198,6 +199,20 @@ const [rfcResults, setRfcResults] = useState([]);
 const [rfcError, setRfcError] = useState('');
 const [rfcMsg, setRfcMsg] = useState('');
 const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
+
+  function navBtnStyle(active) {
+    return {
+      padding: sidebarCollapsed ? '8px 0' : '8px 12px',
+      cursor: 'pointer',
+      textAlign: 'left',
+      background: active ? '#eee' : 'transparent',
+      border: '1px solid #ccc',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+      gap: 8
+    };
+  }
 
   const PAGE_SIZE = 100;
 
@@ -2662,52 +2677,94 @@ async function executeRfcBatch() {
   }
 
   return (
-    <main style={layoutStyle}>
+    <main style={{
+      ...layoutStyle,
+      gridTemplateColumns: `${sidebarCollapsed ? 64 : 220}px 1fr`
+    }}>
       <aside style={{
-        ...sideNavStyle, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'sticky', top: 0, height: '100vh', boxSizing: 'border-box'
+        ...sideNavStyle,
+        padding: sidebarCollapsed ? 8 : 16,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        boxSizing: 'border-box'
       }}>
         <div>
+          {/* Burger toggle */}
+          <button
+            onClick={() => setSidebarCollapsed(v => !v)}
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 20, padding: 8, alignSelf: 'flex-start' }}
+            aria-label="Toggle sidebar"
+          >
+            ☰
+          </button>
+
           {/* Banner */}
-          <div style={{ marginBottom: '16px', textAlign: 'center' }}>
-            <img
-              src={brandBanner}
-              alt="Brand Banner"
-              style={{ maxWidth: '100%', height: 'auto' }}
-            />
-          </div>
-          <h3>Sections</h3>
+          {!sidebarCollapsed && (
+            <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+              <img src={brandBanner} alt="Brand Banner" style={{ maxWidth: '100%', height: 'auto' }} />
+            </div>
+          )}
+
+          {!sidebarCollapsed && <h3>Sections</h3>}
+
           <div style={{ display: 'grid', gap: 8 }}>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'sap-realms' ? '#eee' : 'transparent', border: '1px solid #ccc' }} onClick={() => setSection('sap-realms')}>SAP Realms</button>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'sap-import' ? '#eee' : 'transparent', border: '1px solid #ccc' }} disabled={!selectedRealm} onClick={() => setSection('sap-import')}>Import SAP Tables</button>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'reports' ? '#eee' : 'transparent', border: '1px solid #ccc' }} disabled={!selectedRealm} onClick={() => setSection('reports')}>Reports</button>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'rfc' ? '#eee' : 'transparent', border: '1px solid #ccc' }} disabled={!selectedRealm} onClick={() => setSection('rfc')}>RFC Execution</button>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'sod' ? '#eee' : 'transparent', border: '1px solid #ccc' }} disabled={!selectedRealm} onClick={() => setSection('sod')}>SOD & Audit</button>
+            <button style={navBtnStyle(section === 'sap-realms')} onClick={() => setSection('sap-realms')} title="SAP Realms">
+              <span style={{ fontSize: 16 }}>🗄️</span>
+              {!sidebarCollapsed && <span>SAP Realms</span>}
+            </button>
+
+            <button style={navBtnStyle(section === 'sap-import')} disabled={!selectedRealm} onClick={() => setSection('sap-import')} title="Import SAP Tables">
+              <span style={{ fontSize: 16 }}>📥</span>
+              {!sidebarCollapsed && <span>Import SAP Tables</span>}
+            </button>
+
+            <button style={navBtnStyle(section === 'reports')} disabled={!selectedRealm} onClick={() => setSection('reports')} title="Reports">
+              <span style={{ fontSize: 16 }}>📊</span>
+              {!sidebarCollapsed && <span>Reports</span>}
+            </button>
+
+            <button style={navBtnStyle(section === 'rfc')} disabled={!selectedRealm} onClick={() => setSection('rfc')} title="RFC Execution">
+              <span style={{ fontSize: 16 }}>⚡</span>
+              {!sidebarCollapsed && <span>RFC Execution</span>}
+            </button>
+
+            <button style={navBtnStyle(section === 'sod')} disabled={!selectedRealm} onClick={() => setSection('sod')} title="SOD & Audit">
+              <span style={{ fontSize: 16 }}>🛡️</span>
+              {!sidebarCollapsed && <span>SOD & Audit</span>}
+            </button>
           </div>
         </div>
 
-        {/* Bottom group: Settings + realm */}
+        {/* bottom group: Settings + realm */}
         <div>
-          {/* Settings */}
           <div style={{ display: 'grid', gap: 8, marginBottom: '12px' }}>
-            <button style={{ padding: '8px 12px', cursor: 'pointer', textAlign: 'left', background: section === 'settings' ? '#eee' : 'transparent', border: '1px solid #ccc' }} onClick={() => setSection('settings')}>⚙️ Settings</button>
+            <button style={navBtnStyle(section === 'settings')} onClick={() => setSection('settings')} title="Settings">
+              <span style={{ fontSize: 16 }}>⚙️</span>
+              {!sidebarCollapsed && <span>Settings</span>}
+            </button>
           </div>
 
-          {/* Blocco realm */}
-          <div style={{ padding: '12px', borderTop: '1px solid #ddd', fontSize: '14px' }}>
-            <div style={{ marginBottom: '8px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>Active SAP Realm:</label>
-              <div style={{ padding: '4px 8px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px' }}>
-                {selectedRealm || <span style={{ color: '#999' }}>None selected</span>}
+          {!sidebarCollapsed && (
+            <div style={{ padding: '12px', borderTop: '1px solid #ddd', fontSize: '14px' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>Active SAP Realm:</label>
+                <div style={{ padding: '4px 8px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px' }}>
+                  {selectedRealm || <span style={{ color: '#999' }}>None selected</span>}
+                </div>
+              </div>
+              <div style={{ color: '#666', fontSize: '12px', marginTop: '8px' }}>
+                {selectedRealm ? (
+                  <span>Manage realms in <strong>SAP Realms</strong> section</span>
+                ) : (
+                  <span>Go to <strong>SAP Realms</strong> to configure</span>
+                )}
               </div>
             </div>
-            <div style={{ color: '#666', fontSize: '12px', marginTop: '8px' }}>
-              {selectedRealm ? (
-                <span>Manage realms in <strong>SAP Realms</strong> section</span>
-              ) : (
-                <span>Go to <strong>SAP Realms</strong> to configure</span>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </aside>
 
