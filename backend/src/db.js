@@ -1381,7 +1381,7 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
     )
   `);
 
-  // Adding index for fastwer queries
+  // Adding index for faster queries
   await q(`
     CREATE INDEX idx_sod_ra_results_element_risk_function
     ON sod_ra_results(elementid, riskid, functionid)
@@ -1426,6 +1426,38 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
         [elementId]
       ).catch(() => ({ rows: [] }));
       if (refRes.rows.length > 0 && refRes.rows[0].refuser) refUser = refRes.rows[0].refuser;
+
+      // SAP_ALL check (SAP_ALL users must be skipped for performance and out of scope)
+      // Check both the user itself and its reference user.
+      const bnamesToCheck = [elementId];
+      if (refUser) bnamesToCheck.push(refUser);
+
+      const sapAllRes = await q(
+        `SELECT 1 FROM sap_raw_${realm}_ust04
+         WHERE bname = ANY($1) AND profile = 'SAP_ALL'
+         LIMIT 1`,
+        [bnamesToCheck]
+      ).catch(() => ({ rows: [] }));
+
+      if (sapAllRes.rows.length > 0) {
+        await q(`
+          INSERT INTO sod_ra_results
+          (elementtype,elementid,elementdescription,riskid,riskdescription,risklevel,risktype,
+           functionid,functiondescription,action,authobject,authfield,
+           searchfrom,searchto,foundvaluefrom,foundvalueto,
+           authorizationID,profilesingle,profilecomposite,rolesingle,rolecomposite)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        `, [
+          elementType, elementId, elementDesc,
+          'SAP_ALL', 'SAP_ALL User, skipping', 'CRITICAL', '',
+          '', '', '', '', '',
+          '', '', '', '',
+          '', '', '', '', ''
+        ]);
+
+        continue; // skip STEP 1 buffer build, STEP 2 and STEP 3 for this element
+      }
+      // --- END SAP_ALL check --------------------------------------------------
 
       await q(`
         CREATE TEMP TABLE tmp_sod_element_auth (
