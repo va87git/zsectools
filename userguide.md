@@ -3,24 +3,20 @@
 ## Table of Contents
 
 - [Introduction](#introduction)
-- [Health Checks](#health-checks)
 - [SAP Realms](#sap-realms)
 - [Import SAP Tables](#import-sap-tables)
 - [Reports](#reports)
 - [RFC Execution](#rfc-execution)
 - [SOD & Audit](#sod--audit)
+- [Settings](#settings)
+  - [General](#general)
+  - [Health Checks](#health-checks)
 
 ## Introduction
 
 ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), and perform SOD risk analysis against a configurable rule matrix.
 
-The application is organized into sections, accessible from the side panel: **Health Checks**, **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, and **SOD & Audit**. With the exception of Health Checks and SAP Realms, every section requires an active SAP Realm to be selected first.
-
-## Health Checks
-
-This section lets you verify that the application's prerequisites are correctly installed and working: backend availability, database connectivity, and the SAP NW RFC SDK setup. You can also save the SDK path here, which is persisted in the database and applied automatically on backend startup. Please restart application if on Windows (no needs in Linux or Docker container). Keep in mind you still need to use Linux SAP SDK with Docker running on Windows.
-
-Before running an SAP connectivity check (`RFCPING`), select an active realm in the [SAP Realms](#sap-realms) section. The ping check verifies that the machine running the backend can actually reach the selected SAP system over the network and that the provided credentials are valid.
+The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
 
 ## SAP Realms
 
@@ -28,7 +24,7 @@ A "Realm" represents a single SAP system you want to connect to. In this section
 
 Always verify that the machine running the backend can reach the SAP system referenced by the selected realm — you can confirm this with an RFC ping from the [Health Checks](#health-checks) section.
 
-Selecting an active realm here is **mandatory** to use every other section of the application (Import SAP Tables, Reports, RFC Execution, SOD & Audit).
+Selecting an active realm here is **mandatory** to use every other section of the application.
 
 ## Import SAP Tables
 
@@ -53,6 +49,8 @@ This section provides a collection of ready-to-use reports. Some of them mirror 
 
 Reports are generated from the locally imported tables (see [Import SAP Tables](#import-sap-tables)), so make sure the relevant tables — and, where needed, the additional infos — have been downloaded and built beforehand.
 
+Select a report from dropdown menu (reports content is self-explanatory), run it with button **Execute query**, wait for results, and then you can export to a CSV file.
+
 ## RFC Execution
 
 This section allows you to run mass operations against SAP, such as bulk user or role changes, by executing the same RFC call repeatedly for a list of input rows.
@@ -60,6 +58,8 @@ This section allows you to run mass operations against SAP, such as bulk user or
 The application expects a **tab-separated CSV file** as input. The exact column layout expected depends on the RFC action you select from the dropdown menu: once you pick an action, the application displays the required field layout directly in the UI, so you always know which columns your CSV file needs to contain before uploading it.
 
 After uploading the file and reviewing the preview, click **Execute RFC Batch** to run the operation against every row of the input file. The application reports execution results per row, including any errors encountered.
+
+When uploading an input file, the application checks the first line (header) match the **Required fields** schema (and if not, it refuses to upload it); please copy-paste this for creating header in input file, do not consider the example below in which every header is modified in order to make it more explanatory. **Example** box shows for each RFC Command the expected data values (such as datefrom-dateto that should be YYYYMMDD).
 
 ## SOD & Audit
 
@@ -94,3 +94,17 @@ The section is organized into the following panels:
 - **Clear elements**: removes all elements currently queued for analysis, letting you start a new selection from scratch.
 
 The typical workflow for this section is: import the rule matrix, select the ruleset to use, add the elements you want to analyze with **Add element**, run the analysis with **Run Analysis**, then review and export the results.
+
+## Settings
+
+The Settings section groups application-level configuration and diagnostics. It is organized into two sub-sections: **General** and **Health Checks**.
+
+### General
+
+Work in progress. General application settings (such as appearance/theme options) will be available here in a future release.
+
+### Health Checks
+
+This section lets you verify that the application's prerequisites are correctly installed and working: backend availability, database connectivity, and the SAP NW RFC SDK setup. You can also save the SDK path here, which is persisted in the database and applied automatically on backend startup. Please restart application if on Windows (no needs in Linux or Docker container). Keep in mind you still need to use Linux SAP SDK with Docker running on Windows.
+
+Before running an SAP connectivity check (`RFCPING`), select an active realm in the [SAP Realms](#sap-realms) section. The ping check verifies that the machine running the backend can actually reach the selected SAP system over the network and that the provided credentials are valid.
