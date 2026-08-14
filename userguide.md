@@ -11,6 +11,10 @@
 - [Settings](#settings)
   - [General](#general)
   - [Health Checks](#health-checks)
+- [Technical Connection Information](#technical-connection-information)
+  - [User ID and Connection](user-id-and-connection)
+  - [Authorizations](#authorizations)
+- [Extraction Information](#extraction-information)
 
 ## Introduction
 
@@ -108,3 +112,133 @@ Work in progress. General application settings (such as appearance/theme options
 This section lets you verify that the application's prerequisites are correctly installed and working: backend availability, database connectivity, and the SAP NW RFC SDK setup. You can also save the SDK path here, which is persisted in the database and applied automatically on backend startup. Please restart application if on Windows (no needs in Linux or Docker container). Keep in mind you still need to use Linux SAP SDK with Docker running on Windows.
 
 Before running an SAP connectivity check (`RFCPING`), select an active realm in the [SAP Realms](#sap-realms) section. The ping check verifies that the machine running the backend can actually reach the selected SAP system over the network and that the provided credentials are valid.
+
+---
+
+## Technical Connection Information
+
+### User ID and Connection
+
+The program uses the standard SAP library (`sapnco.dll` or `sapnco.so`) which provides the classes necessary for developing interface programs (RFC connections) in a Windows/Linux environment.
+
+The default connection occurs on port `36[SID]` via RFC (this is a standard SAP behavior, you cannot change it).
+
+For RFC calls, it is necessary to provide the program with the credentials of a valid user (interactive mode is not required), therefore one of the following SAP user types: **B (System)** or **A (Dialog)** or **S (Service)**. User type **B (System)** is recommended.
+
+Type **C (Communication)** is not applicable as the classes dedicated to self-service password changes are not available.
+
+### Authorizations
+
+The connection user must have the following minimum authorizations assigned, please consider anyway to use `ZSECTOOLS.SAP` role as it has been fully tested. The following list is for documentation only proposals:
+
+**Object 1: S_RFC**
+- **ACTVT:** 16
+- **RFC_NAME:**
+  - DDIF_FIELDINFO_GET
+  - RFCPING
+  - RFC_FUNCTION_SEARCH
+  - RFC_METADATA_GET
+  - RFC_READ_TABLE
+  - SWNC_COLLECTOR_GET_AGGREGATES
+- **RFC_TYPE:** *
+
+**Object 2: S_TABU_DIS**
+- **ACTVT:** 03
+- **DICBERCLS:**
+  - &NC&
+  - BWC
+  - FC01
+  - MCOR
+  - PA
+  - PC
+  - SA
+  - SC
+  - SPWD
+  - SS
+
+**Object 3: S_TABU_NAM**
+- **ACTVT:** 03
+- **TABLE:** (see next point [Extraction Information](#extraction-information)). In our case, all values listed in the first column "Table" should be entered in this authorization field (at least mandatory ones).
+
+**Object 4: S_TOOLS_EX**
+- **AUTH:** S_TOOLS_EX_A
+
+## Extraction Information
+
+The tables extracted by the program are as follows (this list may change in future releases):
+
+| Table | Table Group | Table Description | Mandatory |
+|-------|-------------|-------------------|-----------|
+| AGR_DEFINE | SS | Role definition | YES |
+| AGR_AGRS | SS | Roles in Composite Roles | YES |
+| AGR_1250 | SS | Authorization data for the activity group | YES |
+| AGR_1251 | SS | Authorization data for the activity group | YES |
+| AGR_1252 | SS | Organizational elements for authorizations | YES |
+| AGR_1016 | SS | Current Subprofiles for Single Roles | YES |
+| AGR_TEXTS | SS | File Structure for Hierarchical Menu - Customer | YES |
+| AGR_TCODES | SS | Assignment of roles to Tcodes | YES |
+| AGR_FLAGS | SS | Role attributes | YES |
+| AGR_HIER | SS | Table for Structure Information for Menu | YES |
+| AGR_HIERT | SS | Role menu texts | YES |
+| AGR_USERS | SS | Assignment of roles to users | YES |
+| AGR_DATEU | SC | Personal settings for roles | YES |
+| AGR_TIME | SS | Time Stamp for Role (Menu, Profile, Authorizations) | YES |
+| AGR_LSD |  | Role attributes | YES |
+| AGR_BUFFI | SS | Internet Links for a Role | YES |
+| ADCP | SA | Person/Address Assignment (Business Address Services) | YES |
+| ADR6 | SA | E-Mail Addresses (Business Address Services) | YES |
+| ADRP | SA | Persons (Business Address Services) | YES |
+| DF14L | SS | Application Components | NO |
+| DF14T | SS | Business Application Component Names | NO |
+| HRP1000 | SC | Infotype 1000 DB Table | NO |
+| HRP1001 | SC | Infotype 1001 DB Table | NO |
+| TADIR | SS | Directory of Repository Objects | YES |
+| TBTCO | SC | Job Status Overview Table | NO |
+| TBTCP | SC | Background Job Step Overview | NO |
+| TDEVC | SS | Packages | YES |
+| USORG | SS | Org. levels for profile generator | YES |
+| USORG_DB |  | Generated Table for View | YES |
+| USVART | SS | Possible authorization fields as variables | YES |
+| USR01 | SC | User master record (runtime data) | YES |
+| USR02 | SPWD | Logon Data (Kernel-Side Use) | YES |
+| USREFUS |  | Reference user for internet applications | YES |
+| UST04 | SA | User masters | YES |
+| UST10S | SS | User master: Single profiles | YES |
+| UST10C | SS | User master: Composite profiles | YES |
+| UST12 | SS | User master: Authorizations | YES |
+| USR21 | SA | User Name/Address Key Assignment | YES |
+| USGRP | SC | User Groups | YES |
+| USGRPT | SC | Text table for USGRP (User groups) | YES |
+| USGRP_USER |  | Assignment of Users to User Groups | YES |
+| USR06 | SA | Additional Data per User | YES |
+| PA0001 | PA | HR Master Record: Infotype 0001 (Org. Assignment) | NO |
+| PA0002 | PA | HR Master Record: Infotype 0002 (Personal Data) | NO |
+| PA0105 | PA | HR Master Record: Infotype 0105 (Communications) | NO |
+| T001 | FC01 | Company Codes | YES |
+| T001W | MCOR | Plants/Branches | YES |
+| T777P | PC | Plan Versions | YES |
+| T778P | PC | Plan Versions | YES |
+| TOBJ | SS | Authorization Objects | YES |
+| TOBJT | SS | Short Texts for Authorization Objects | YES |
+| TSTC | SS | SAP Transaction Codes | YES |
+| TSTCT | SS | Transaction Code Texts | YES |
+| TSTCP | SS | Parameters for Transactions | YES |
+| USOBT_C | SC | Relation Transaction > Auth. Object (Customer) | NO |
+| USOBX_C | SC | Check Table for Table USOBT_C | NO |
+| RSECHIE |  | Status of Authorization Hierarchies | NO (BW only) |
+| RSECHIE_STRING |  | Status of Authorization Hierarchies | NO (BW only) |
+| RSECTXT | BWC | Authorization Texts | NO (BW only) |
+| RSECVAL |  | Authorization Value Status | NO (BW only) |
+| RSECVAL_STRING |  | Authorization Value Status | NO (BW only) |
+| RSECBIAU |  | Header Table for TLOGO BI Authorization BIAU | NO (BW only) |
+| RSECUSERAUTH |  | BI AS Authorizations: Assignment of User Auth | NO (BW only) |
+| RSECUSERAUTH_CL |  | BI AS Authorizations: Assignment of User Auth (Change Log) | NO (BW only) |
+| RSECHIE_CL |  | Authorization Hierarchies Changes Change Log | NO (BW only) |
+| RSECTXT_CL |  | Change Documents for Document Texts | NO (BW only) |
+| RSECVAL_CL |  | Authorization Value Change (Change Log) | NO (BW only) |
+
+Access to these tables occurs in **read-only mode** via the standard SAP function module `RFC_READ_TABLE`.
+
+Additionally, **daily, weekly or monthly aggregated usage statistics** are extracted, whose database can be accessed in SAP via transaction `ST03N` (function module `SWNC_COLLECTOR_GET_AGGREGATES`).
+
+**Non-mandatory tables** are not necessary for analysis purposes and could be extracted only for specific needs.
