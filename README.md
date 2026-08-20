@@ -76,8 +76,8 @@ ZSecTools uses a single `.env` file in the project root for all environment-spec
    | :--- | :--- | :--- | :--- |
    | **1. Native Windows**<br>*(Local Machine Only)* | `PORT=3009`<br>`VITE_API_BASE=http://localhost:3009` | `http://localhost:3009` | `VITE_API_BASE` **must use the same port specified in `PORT`**. |
    | **2. Native Windows**<br>*(LAN / Remote Access)* | `PORT=3009`<br>`VITE_API_BASE=http://192.168.1.72:3009` | `http://192.168.1.72:3009` | Replace with your host machine's local IP. After changing this, re-run `setup.bat`. |
-   | **3. Docker**<br>*(Local Machine Only)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://localhost:3001`<br>`CORS_ORIGIN=http://localhost:5173` | `http://localhost:3001` | `VITE_API_BASE` **must use the same port specified in `BACKEND_PORT`**. |
-   | **4. Docker**<br>*(LAN / Remote Access)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://192.168.1.72:3001`<br>`CORS_ORIGIN=http://192.168.1.72:5173` | `http://192.168.1.72:3001` | Rebuild images using `docker compose up --build` whenever these values are updated. |
+   | **3. Docker**<br>*(Local Machine Only)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://localhost:3001`<br>`CORS_ORIGIN=http://localhost:5173` | `http://localhost:3001` | Access frontend on `http://localhost:5173`. `VITE_API_BASE` **must point to `BACKEND_PORT` (3001)**. |
+   | **4. Docker**<br>*(LAN / Remote Access)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://192.168.1.72:3001`<br>`CORS_ORIGIN=http://192.168.1.72:5173` | `http://192.168.1.72:3001` | Access frontend on `http://192.168.1.72:5173`. Rebuild images using `docker compose up --build` whenever updated. |
 
   > **Note:**
   > - **`VITE_API_BASE` is baked into the Frontend during build time:** The `.env` file is read *only* when building the frontend assets (`npm run build` or `docker compose up --build`). The browser will always invoke the URL compiled into those assets.
