@@ -5,8 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "start": "node --import dotenv/config src/server.js dotenv_config_path=../.env",
+    "dev": "node --watch --import dotenv/config src/server.js dotenv_config_path=../.env"
   },
   "dependencies": {
     "cors": "latest",

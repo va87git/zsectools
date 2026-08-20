@@ -28,7 +28,7 @@ services:
         condition: service_healthy
     environment:
       PORT: 3000
-      CORS_ORIGIN: http://localhost:5173
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: appdb
@@ -54,7 +54,7 @@ services:
       # Mount SAP table list file
       - ./SAP-TABLE-LIST.txt:/app/SAP-TABLE-LIST.txt:ro
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT:-3001}:3000"
 
   frontend:
     build:
@@ -64,12 +64,12 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE: http://localhost:3000
+      VITE_API_BASE: ${VITE_API_BASE:-http://localhost:3001}
     volumes:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
 
 volumes:
   pgdata:

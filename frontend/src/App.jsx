@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchJson } from './api.js';
 import brandBanner from '../assets/brand/zsectools-banner-v2.png';
 
+// Dynamic API Base URL resolution:
+// Uses VITE_API_BASE if provided (mandatory for Docker).
+// Otherwise, dynamically fallbacks to current hostname on port 3000 (Windows Native: Local or Remote LAN).
+const API_BASE = import.meta.env.VITE_API_BASE || `${window.location.protocol}//${window.location.hostname}:3000`;
+
 const SOD_EXPECTED_TABLES_FRONTEND = [
   'sod_business_process',
   'sod_functions',
@@ -517,7 +522,7 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
   }, 500);
 
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+    //const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
     const response = await fetch(`${API_BASE}/api/reports/build-additional-infos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -744,7 +749,7 @@ async function executeRfcBatch() {
 
     setExportLoading(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+      //const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       // Try to use the File System Access API to pick a folder and write all files there
       if (typeof window.showDirectoryPicker === 'function') {
         const dirHandle = await window.showDirectoryPicker();
@@ -821,7 +826,7 @@ async function executeRfcBatch() {
 
     setExportLoading(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+      //const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       // Export each selected batch individually
       if (selectedStatsBatch) {
         // Export only the selected batch
@@ -1084,8 +1089,8 @@ async function executeRfcBatch() {
   async function exportReport() {
     if (!reportTableName || !selectedRealm) return;
     try {
-      const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
-      const url = `${apiBase}/api/reports/export-csv?realm=${encodeURIComponent(selectedRealm.trim())}&tableName=${encodeURIComponent(reportTableName)}`;
+      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+      const url = `${API_BASE}/api/reports/export-csv?realm=${encodeURIComponent(selectedRealm.trim())}&tableName=${encodeURIComponent(reportTableName)}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
       const blob = await response.blob();
@@ -2239,8 +2244,8 @@ async function executeRfcBatch() {
       return;
     }
     try {
-      const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
-      const url = `${apiBase}/api/sod/ra-results?format=csv`;
+      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+      const url = `${API_BASE}/api/sod/ra-results?format=csv`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
       const blob = await response.blob();
@@ -2274,7 +2279,7 @@ async function executeRfcBatch() {
       const realmData = await fetchJson(`/api/sap-realms?realm=${encodeURIComponent(selectedRealm.trim())}`);
       const realmLanguage = realmData?.realm?.sap_language || 'EN';
 
-      const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       const params = new URLSearchParams({
         realm: selectedRealm.trim(),
         rulesetId: sodRuleset,
@@ -2282,7 +2287,7 @@ async function executeRfcBatch() {
         analysisLevel: sodAnalysisLevel,
         realmLanguage
       });
-      const evtSource = new EventSource(`${apiBase}/api/sod/run-analysis-stream?${params}`);
+      const evtSource = new EventSource(`${API_BASE}/api/sod/run-analysis-stream?${params}`);
 
       await new Promise((resolve, reject) => {
         evtSource.onmessage = (e) => {

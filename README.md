@@ -58,6 +58,7 @@ ZSecTools uses a single `.env` file in the project root for all environment-spec
    ```bash
    cp .env.example .env
    ```
+   > **Note:** .env.example is a "ready to go" configuration for running locally on docker
 
 2. Open `.env` and fill in the values for your environment. The file is self-documented — each variable has an inline comment explaining what it does. The key values to set are:
 
@@ -68,6 +69,21 @@ ZSecTools uses a single `.env` file in the project root for all environment-spec
    | `SAPNWRFC_HOME` | Must match `SAPNWRFC_CONTAINER_PATH` |
    | `LD_LIBRARY_PATH` | Must be `<SAPNWRFC_CONTAINER_PATH>/lib` |
    | `DB_HOST` | Use `db` when running via Docker Compose; use `localhost` when running the backend directly outside Docker |
+
+   Network specific variables:
+
+   | Scenario | Required Variables | API Target (`VITE_API_BASE`) | Key Notes / Rules |
+   | :--- | :--- | :--- | :--- |
+   | **1. Native Windows**<br>*(Local Machine Only)* | `PORT=3009`<br>`VITE_API_BASE=http://localhost:3009` | `http://localhost:3009` | `VITE_API_BASE` **must use the same port specified in `PORT`**. |
+   | **2. Native Windows**<br>*(LAN / Remote Access)* | `PORT=3009`<br>`VITE_API_BASE=http://192.168.1.72:3009` | `http://192.168.1.72:3009` | Replace with your host machine's local IP. After changing this, re-run `setup.bat`. |
+   | **3. Docker**<br>*(Local Machine Only)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://localhost:3001`<br>`CORS_ORIGIN=http://localhost:5173` | `http://localhost:3001` | `VITE_API_BASE` **must use the same port specified in `BACKEND_PORT`**. |
+   | **4. Docker**<br>*(LAN / Remote Access)* | `BACKEND_PORT=3001`<br>`FRONTEND_PORT=5173`<br>`VITE_API_BASE=http://192.168.1.72:3001`<br>`CORS_ORIGIN=http://192.168.1.72:5173` | `http://192.168.1.72:3001` | Rebuild images using `docker compose up --build` whenever these values are updated. |
+
+  > **Note:**
+  > - **`VITE_API_BASE` is baked into the Frontend during build time:** The `.env` file is read *only* when building the frontend assets (`npm run build` or `docker compose up --build`). The browser will always invoke the URL compiled into those assets.
+  > - **Port mapping differences:**
+  >   - **Native Windows:** The backend runs directly on your OS using `PORT`. Thus, `VITE_API_BASE` must point to `PORT`.
+  >   - **Docker:** The backend container exposes its port to the host system via `BACKEND_PORT`. Thus, `VITE_API_BASE` must point to `BACKEND_PORT`.
 
 3. The `.env` file is listed in `.gitignore` and will never be committed. The template `.env.example` is committed in its place and should be kept up to date.
 
@@ -142,8 +158,6 @@ In all cases (manual run, service, or Docker), the application is served on **`h
 
 - **Translations are not parameterized**: the UI language is hard-coded to English.
 - **The user interface is very basic**, with no theming support. Dark mode support is planned for a future release.
-- **Environment variables and settings management is incomplete or inconsistent**, and is currently scattered across multiple files.
-- **Some configuration details are not easily parameterizable**, for example the frontend port.
 - **Windows needs App restart when SAP SDK path changed**, this is because of env variables handling in Windows.
 
 ## SOD Analysis Accuracy

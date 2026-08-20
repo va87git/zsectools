@@ -53,7 +53,17 @@ start "ZSecTools Backend Log" cmd /k ""%NODE_EXE%" ".\backend\src\server.js""
 
 :: Give backend a brief moment to boot then launch front-end entry
 timeout /t 2 /nobreak > nul
-start "" "http://localhost:3000"
+:: Read PORT environment variable from .env (fallback default: 3000)
+set "APP_PORT=3000"
+
+if exist "%BASE_DIR%.env" (
+    for /f "usebackq tokens=1,* delims==" %%A in ("%BASE_DIR%.env") do (
+        if "%%A"=="PORT" set "APP_PORT=%%B"
+    )
+)
+
+timeout /t 2 /nobreak > nul
+start "" "http://localhost:%APP_PORT%"
 
 echo ===================================================
 echo   ZSecTools application is up and running!

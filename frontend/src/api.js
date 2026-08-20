@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+// Dynamic API Base URL resolution:
+// Uses VITE_API_BASE if provided (mandatory for Docker).
+// Otherwise, dynamically fallbacks to current hostname on port 3000 (Windows Native: Local or Remote LAN).
+const API_BASE = import.meta.env.VITE_API_BASE || `${window.location.protocol}//${window.location.hostname}:3000`;
 
 export async function fetchJson(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
