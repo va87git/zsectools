@@ -1600,9 +1600,9 @@ export async function runSodAnalysis(realm, rulesetId, elementType, analysisLeve
             const serviceName = action.replace('[SVC]', '').trim();
             const hashRes = await q(
               `SELECT name FROM sap_raw_${realm}_usobhash
-              WHERE RTRIM(SUBSTRING(obj_name, 1, LENGTH(obj_name) - 4)) = $1
-              OR RTRIM(obj_name) = $1
-              LIMIT 1`,
+                 WHERE RTRIM(LEFT(obj_name, GREATEST(0, LENGTH(obj_name) - 4))) = $1
+                    OR RTRIM(obj_name) = $1
+                 LIMIT 1`,
               [serviceName],).catch(() => ({ rows: [] }));
 
             //if no service is found, jump to next action (it is not relevant)
