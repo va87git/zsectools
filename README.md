@@ -143,8 +143,6 @@ If you don't want to launch `run.bat` manually every time, you can install ZSecT
 .\install-services.bat
 ```
 
-In all cases (manual run, service, or Docker), the application is served on **`http://localhost:3000`**.
-
 ## Project Structure
 
 - `frontend/`: browser UI (React + Vite)
