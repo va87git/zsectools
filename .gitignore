@@ -9,3 +9,5 @@ yarn-error.log*
 pnpm-debug.log*
 *.log
 SAP-TABLE-LIST.txt
+node-bin/
+postgres/
