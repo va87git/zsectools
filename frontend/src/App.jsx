@@ -2544,16 +2544,26 @@ async function executeRfcBatch() {
             <button style={btnStyle('#2e7d32')} onClick={covAddUser} disabled={covUserLoading}>
               {covUserLoading ? 'Adding...' : 'Add user'}
             </button>
-            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
-                  <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
-                  <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
-                  <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
-              </div>
-            <button style={{ ...btnStyle('#1976d2'), marginRight: 62 }} onClick={covExportUsers} disabled={!covUsers.length}>
-            Export users
-            </button>
+            <div style={{
+              marginLeft: 'auto',
+              display: 'grid',
+              gridTemplateColumns: 'auto auto auto',
+              gap: '6px 8px',
+              alignItems: 'center',
+              justifyItems: 'end'
+            }}>
+              {/* Line 1 */}
+              <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
+              <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
+              <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
+              <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
+
+              {/* Line2 2: Export under Import users (column 2) */}
+              <span />
+              <button style={btnStyle('#1976d2')} onClick={covExportUsers} disabled={!covUsers.length}>
+                Export users
+              </button>
+              <span />
             </div>
           </div>
           {covUserMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covUserMsg}</p>}
@@ -2584,17 +2594,27 @@ async function executeRfcBatch() {
             <button style={btnStyle('#1a73e8')} onClick={covLoadRolesFromDb} disabled={covRolesLoading}>
               {covRolesLoading ? 'Loading...' : 'Get as-is roles from DB'}
             </button>
-            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
-                <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
-                <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
-                <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
-                  </div>
-                    <button style={{ ...btnStyle('#1976d2'), marginRight: 62 }} onClick={covExportRoles} disabled={!covRoles.length}>
-                      Export roles
-                    </button>
-              </div>
+            <div style={{
+              marginLeft: 'auto',
+              display: 'grid',
+              gridTemplateColumns: 'auto auto auto',
+              gap: '6px 8px',
+              alignItems: 'center',
+              justifyItems: 'end'
+            }}>
+              {/* Line1 1 */}
+              <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
+              <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
+              <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
+              <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
+
+              {/* Line2 2: Export under Import roles (column 2) */}
+              <span />
+              <button style={btnStyle('#1976d2')} onClick={covExportRoles} disabled={!covRoles.length}>
+                Export roles
+              </button>
+              <span />
+            </div>
             </div>
           {covRolesMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covRolesMsg}</p>}
           {covRolesErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covRolesErr}</p>}
