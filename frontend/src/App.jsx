@@ -2265,7 +2265,7 @@ async function executeRfcBatch() {
 
   async function exportSodResults() {
     if (sodRaResultsTotal === 0) {
-      alert('Nessun risultato da esportare.');
+      alert('No data to export.');
       return;
     }
     try {
@@ -2411,6 +2411,50 @@ async function executeRfcBatch() {
     reader.readAsText(file);
   }
 
+  async function covExportUsers() {
+      if (!covUsers || covUsers.length === 0) {
+        alert('No data to export.');
+        return;
+      }
+      try {
+        const url = `${API_BASE}/api/coverage/users?format=csv`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = `cov_users.csv`;
+        a.click();
+        URL.revokeObjectURL(objectUrl);
+      } catch (err) {
+        console.error('Export failed', err);
+        alert('Export failed: ' + err.message);
+      }
+  }
+
+  async function covExportRoles() {
+    if (!covRoles || covRoles.length === 0) {
+      alert('No data to export.');
+      return;
+    }
+    try {
+      const url = `${API_BASE}/api/coverage/roles?format=csv`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `cov_roles.csv`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Export failed', err);
+      alert('Export failed: ' + err.message);
+    }
+  }
+
   function covHandleRolesFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
@@ -2500,10 +2544,17 @@ async function executeRfcBatch() {
             <button style={btnStyle('#2e7d32')} onClick={covAddUser} disabled={covUserLoading}>
               {covUserLoading ? 'Adding...' : 'Add user'}
             </button>
-            <span style={{ color: '#555', fontSize: 13, alignSelf: 'center' }}>Upload CSV/TSV File</span>
-            <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
-            <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
-            <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
+            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
+                  <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
+                  <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
+                  <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
+              </div>
+            <button style={{ ...btnStyle('#1976d2'), marginRight: 62 }} onClick={covExportUsers} disabled={!covUsers.length}>
+            Export users
+            </button>
+            </div>
           </div>
           {covUserMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covUserMsg}</p>}
           {covUserErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covUserErr}</p>}
@@ -2533,11 +2584,18 @@ async function executeRfcBatch() {
             <button style={btnStyle('#1a73e8')} onClick={covLoadRolesFromDb} disabled={covRolesLoading}>
               {covRolesLoading ? 'Loading...' : 'Get as-is roles from DB'}
             </button>
-            <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
-            <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
-            <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
-            <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
-          </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
+                <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
+                <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
+                <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
+                  </div>
+                    <button style={{ ...btnStyle('#1976d2'), marginRight: 62 }} onClick={covExportRoles} disabled={!covRoles.length}>
+                      Export roles
+                    </button>
+              </div>
+            </div>
           {covRolesMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covRolesMsg}</p>}
           {covRolesErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covRolesErr}</p>}
           {covRoles.length > 0 && (
