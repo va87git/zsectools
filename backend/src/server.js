@@ -43,7 +43,16 @@ import {
   buildAdditionalInfos,
   executeReport,
   getReportRows,
-  pool
+  pool,
+  searchAndAddCoverageUsers,
+  getCoverageUsers,
+  clearCoverageData,
+  importCoverageUsersFromTsv,
+  importCoverageRolesFromTsv,
+  loadCoverageRolesFromDb,
+  getCoverageRoles,
+  runCoverageAnalysis,
+  getCoverageResults
 } from './db.js';
 import {
   fetchUserStatistics,
@@ -916,21 +925,21 @@ app.get('/api/sod/ra-results', async (req, res) => {
     }
 
     if (format === 'csv') {
-          const client = await pool.connect();
-          try {
-            res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-            res.setHeader('Content-Disposition', 'attachment; filename="sod_ra_results.csv"');
-            const BATCH = 500;
-            let batchOffset = 0;
-            let headerWritten = false;
-            while (true) {
-              const batch = await client.query(
-                `SELECT * FROM sod_ra_results ORDER BY id ASC LIMIT $1 OFFSET $2`,
-                [BATCH, batchOffset]
-              );
-              if (batch.rows.length === 0) break;
-              // Removing id from batch
-              const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
+      const client = await pool.connect();
+      try {
+        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="sod_ra_results.csv"');
+        const BATCH = 500;
+        let batchOffset = 0;
+        let headerWritten = false;
+        while (true) {
+          const batch = await client.query(
+            `SELECT * FROM sod_ra_results ORDER BY id ASC LIMIT $1 OFFSET $2`,
+            [BATCH, batchOffset]
+          );
+          if (batch.rows.length === 0) break;
+            // Removing id from batch
+            const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
               if (!headerWritten) {
                 res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
                 headerWritten = true;
@@ -942,11 +951,11 @@ app.get('/api/sod/ra-results', async (req, res) => {
               batchOffset += BATCH;
             }
             res.end();
-          } finally {
+      } finally {
             client.release();
-          }
-          return;
-        }
+      }
+      return;
+    }
 
     const totalRes = await pool.query(`SELECT COUNT(*) AS count FROM sod_ra_results`);
     const total = Number(totalRes.rows[0].count);
@@ -1152,6 +1161,186 @@ app.post('/api/rfc/execute-batch', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── COVERAGE ──────────────────────────────────────────────────────────────────
+
+app.post('/api/coverage/add-user', async (req, res) => {
+  try {
+    const realm   = String(req.body?.realm   || '').trim();
+    const pattern = String(req.body?.pattern || '').trim();
+    if (!realm || !pattern) { res.status(400).json({ ok: false, error: 'realm and pattern are required' }); return; }
+    const result = await searchAndAddCoverageUsers(realm, pattern);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/users', async (req, res) => {
+  try {
+    const format = req.query?.format || 'json';
+    const limit  = Number(req.query?.limit  || 200);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getCoverageUsers(limit, offset);
+   	//csv export:
+	if (format === 'csv') {
+         const client = await pool.connect();
+         try {
+           res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+           res.setHeader('Content-Disposition', 'attachment; filename="cov_users.csv"');
+           const BATCH = 500;
+           let batchOffset = 0;
+           let headerWritten = false;
+           while (true) {
+             const batch = await client.query(
+               `SELECT * FROM cov_users ORDER BY userid LIMIT $1 OFFSET $2`,
+               [BATCH, batchOffset]
+             );
+             if (batch.rows.length === 0) break;
+               // Removing id from batch
+               const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
+                 if (!headerWritten) {
+                   res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
+                   headerWritten = true;
+                 }
+                 for (const row of cleanRows) {
+                   res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+                 }
+                 if (batch.rows.length < BATCH) break;
+                 batchOffset += BATCH;
+               }
+               res.end();
+         } finally {
+               client.release();
+         }
+         return;
+       }
+	//end export csv
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/clear', async (req, res) => {
+  try {
+    const target = String(req.body?.target || 'all').trim();
+    await clearCoverageData(target);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/import-users-tsv', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) { res.status(400).json({ ok: false, error: 'No rows provided' }); return; }
+    const result = await importCoverageUsersFromTsv(rows);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/import-roles-tsv', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) { res.status(400).json({ ok: false, error: 'No rows provided' }); return; }
+    const result = await importCoverageRolesFromTsv(rows);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/load-roles-from-db', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    const result = await loadCoverageRolesFromDb(realm);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/roles', async (req, res) => {
+  try {
+    const format = req.query?.format || 'json';
+    const limit  = Number(req.query?.limit  || 200);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getCoverageRoles(limit, offset);
+    //csv export:
+	if (format === 'csv') {
+          const client = await pool.connect();
+          try {
+            res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename="cov_roles.csv"');
+            const BATCH = 500;
+            let batchOffset = 0;
+            let headerWritten = false;
+            while (true) {
+              const batch = await client.query(
+                `SELECT * FROM cov_roles ORDER BY userid, agr_name LIMIT $1 OFFSET $2`,
+                [BATCH, batchOffset]
+              );
+              if (batch.rows.length === 0) break;
+                const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
+                  if (!headerWritten) {
+                    res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
+                    headerWritten = true;
+                  }
+                  for (const row of cleanRows) {
+                    res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+                  }
+                  if (batch.rows.length < BATCH) break;
+                  batchOffset += BATCH;
+                }
+                res.end();
+          } finally {
+                client.release();
+          }
+          return;
+        }
+	//end export csv
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/run', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    const result = await runCoverageAnalysis(realm);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/results', async (req, res) => {
+  try {
+    const limit  = Number(req.query?.limit  || 100);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getCoverageResults(limit, offset);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/results/export-csv', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const exists = (await client.query(
+      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name='cov_results')`
+    )).rows[0].exists;
+    if (!exists) { res.status(404).json({ ok: false, error: 'No results available' }); return; }
+    res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="coverage_results_${new Date().toISOString().split('T')[0]}.csv"`);
+    const BATCH = 500;
+    let batchOffset = 0, headerWritten = false;
+    while (true) {
+      const batch = await client.query(
+        `SELECT * FROM cov_results ORDER BY userid, tcode, agr_name, coverage LIMIT $1 OFFSET $2`,
+        [BATCH, batchOffset]
+      );
+      if (!batch.rows.length) break;
+      if (!headerWritten) { res.write(Object.keys(batch.rows[0]).join('\t') + '\n'); headerWritten = true; }
+      for (const row of batch.rows)
+        res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+      if (batch.rows.length < BATCH) break;
+      batchOffset += BATCH;
+    }
+    res.end();
+  } catch (e) { if (!res.headersSent) res.status(500).json({ ok: false, error: e.message }); }
+  finally { client.release(); }
 });
 
 const port = Number(process.env.PORT || 3000);

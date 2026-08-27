@@ -8,6 +8,7 @@
 - [Reports](#reports)
 - [RFC Execution](#rfc-execution)
 - [SOD & Audit](#sod--audit)
+- [Coverage](#coverage)
 - [Settings](#settings)
   - [General](#general)
   - [Health Checks](#health-checks)
@@ -98,6 +99,75 @@ The section is organized into the following panels:
 - **Clear elements**: removes all elements currently queued for analysis, letting you start a new selection from scratch.
 
 The typical workflow for this section is: import the rule matrix, select the ruleset to use, add the elements you want to analyze with **Add element**, run the analysis with **Run Analysis**, then review and export the results.
+
+## Coverage
+
+The **Coverage Analysis** section allows you to evaluate role assignments against actual transaction usage. This helps identify over-allocated roles, missing access, or required security adjustments for analyzed users.
+
+### Overview & Core Logic
+
+This analysis is specifically tailored for business users. Therefore, **only transactions explicitly present in role menus are evaluated**; any access granted via ranges or wildcards in the `S_TCODE` authorization object is intentionally excluded.
+
+The analysis follows this workflow:
+1. **Define Users**: Specify the targeted users to analyze.
+2. **Define Role Assignments**: Load or import the candidate role-to-user mappings to test.
+3. **Fetch Usage Data**: The system retrieves historical transaction execution statistics for each user.
+4. **Evaluate Proposed Coverage**: Checks if executed transactions are covered by the candidate role mappings provided in Step 2.
+5. **Evaluate As-Is Coverage**: Checks if executed transactions are covered by the user's current ("as-is") role assignments in the database.
+6. **Generate Results**: Outputs the final coverage matrix for comparison.
+
+---
+
+### Understanding Analysis Results
+
+While most coverage statuses are self-explanatory, note the following key states:
+
+* **`01-COVERED`**: The transaction is covered by the proposed role assignments.
+* **`02-MISSING`**: The transaction is **not** covered by the proposed role assignments, but it **is** covered by the user's current ("as-is") roles. Removing these roles would result in lost access for actively used transactions.
+* **`03-EXTRA`**: The proposed roles grant access to transactions that the user has never executed in the retrieved usage statistics.
+* **`04-ALREADY-MISSING`**: The executed transaction is covered neither by the proposed roles nor by the user's current ("as-is") role assignments. This indicates one of two scenarios:
+  * The transaction assignment was revoked from the user between the start of the collected usage period and the execution of this analysis.
+  * The transaction access is currently granted via range or wildcard values in `S_TCODE` rather than an explicit menu entry.
+
+> **Note**: If you run an analysis using the actual current assignments (e.g., loaded via **Get as-is roles from DB**), you should expect **no `02-MISSING` status** in the results—only `COVERED` or `ALREADY-MISSING`.
+
+---
+
+### 1. Users to Analyze Panel
+
+Define the scope of users you wish to include in the coverage check.
+
+* **User ID Input**: Input a specific User ID or use SQL wildcards (`%` and `_`) to select multiple users (e.g., `ZTEST%`).
+* **Add user**: Executes a search/filter and adds matching users to the analysis queue.
+* **Upload CSV/TSV File**: Select a local CSV, TSV, or TXT file containing user data to load.
+* **Import users**: Uploads and imports the selected user file into the temporary analysis buffer (expected fields: userid,firstName,lastName).
+* **Export users**: Downloads a CSV file containing the currently loaded list of users to analyze.
+* **Clear**: Clears all loaded users from the current workspace.
+
+---
+
+### 2. Role Assignments Panel
+
+Manage the roles assigned to the targeted users for comparison.
+
+* **Get as-is roles from DB**: Automatically populates existing role assignments for the targeted users directly from the DB.
+* **Upload CSV/TSV File**: Select a local file containing user-to-role mappings.
+* **Import roles**: Uploads and imports the role assignments file into the temporary buffer (expected fields: userid,agr_name,agr_description).
+* **Export roles**: Downloads a CSV file containing all currently active role assignments in the buffer.
+* **Clear**: Clears all loaded role assignments from the workspace.
+
+---
+
+### 3. Results Panel
+
+Run the analysis and review the coverage metrics.
+
+* **Run Coverage Analysis**: Triggers the background processing engine to evaluate transaction logs against role definitions for all loaded users.
+* **Refresh**: Reloads the results table view with the latest status from the backend (usually not necessary).
+* **Export CSV**: Exports the full coverage results matrix into a formatted CSV file.
+
+#### Coverage Result Indicators
+The analysis classifies results into distinct status categories for quick review: see [Understanding Analysis Results](#understanding-analysis-results)
 
 ## Settings
 

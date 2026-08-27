@@ -3398,3 +3398,219 @@ export async function getReportRows(realm, tableName, limit = 100, offset = 0) {
     throw err;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COVERAGE
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function ensureCoverageTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS cov_users (userid TEXT PRIMARY KEY, firstname TEXT, lastname TEXT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS cov_roles (userid TEXT, agr_name TEXT, agr_description TEXT, PRIMARY KEY (userid, agr_name))`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS cov_results (userid TEXT, firstname TEXT, lastname TEXT, agr_name TEXT, agr_description TEXT, tcode TEXT, tcode_description TEXT, coverage TEXT, n_exec INTEGER DEFAULT 0)`);
+}
+
+export async function searchAndAddCoverageUsers(realm, pattern) {
+  const src = `yr_${realm}_user_complete_info`;
+  if (!(await tableExists(src))) throw new Error('You must run the build additional infos function first');
+  await ensureCoverageTables();
+  const res = await pool.query(
+    `SELECT bname, name_first, name_last FROM "${src}" WHERE bname ILIKE $1 AND (user_valid IS NULL OR user_valid != 0)`,
+    [pattern]
+  );
+  for (const r of res.rows) {
+    await pool.query(
+      `INSERT INTO cov_users (userid, firstname, lastname) VALUES ($1,$2,$3) ON CONFLICT (userid) DO UPDATE SET firstname=EXCLUDED.firstname, lastname=EXCLUDED.lastname`,
+      [r.bname, r.name_first||'', r.name_last||'']
+    );
+  }
+  return { added: res.rows.length };
+}
+
+export async function getCoverageUsers(limit=200, offset=0) {
+  if (!(await tableExists('cov_users'))) return { rows:[], total:0 };
+  const total = Number((await pool.query(`SELECT COUNT(*) AS c FROM cov_users`)).rows[0].c);
+  const res = await pool.query(`SELECT userid, firstname, lastname FROM cov_users ORDER BY userid LIMIT $1 OFFSET $2`, [limit, offset]);
+  return { rows: res.rows, total };
+}
+
+export async function clearCoverageData(target) {
+  if (!target || target === 'all') {
+    await pool.query(`DROP TABLE IF EXISTS cov_users`);
+    await pool.query(`DROP TABLE IF EXISTS cov_roles`);
+    await pool.query(`DROP TABLE IF EXISTS cov_results`);
+  } else if (target === 'users') {
+    await pool.query(`TRUNCATE cov_users`);
+  } else if (target === 'roles') {
+    await pool.query(`TRUNCATE cov_roles`);
+  } else if (target === 'results') {
+    await pool.query(`TRUNCATE cov_results`);
+  }
+  return { ok: true };
+}
+
+export async function importCoverageUsersFromTsv(rows) {
+  await ensureCoverageTables();
+  let inserted = 0;
+  for (const row of rows) {
+    const userid = String(row.userid||row.USERID||'').trim();
+    if (!userid) continue;
+    await pool.query(
+      `INSERT INTO cov_users (userid,firstname,lastname) VALUES ($1,$2,$3) ON CONFLICT (userid) DO UPDATE SET firstname=EXCLUDED.firstname,lastname=EXCLUDED.lastname`,
+      [userid, String(row.firstname||row.FIRSTNAME||'').trim(), String(row.lastname||row.LASTNAME||'').trim()]
+    );
+    inserted++;
+  }
+  return { inserted };
+}
+
+export async function importCoverageRolesFromTsv(rows) {
+  await ensureCoverageTables();
+  let inserted = 0;
+  for (const row of rows) {
+    const userid   = String(row.userid||row.USERID||'').trim();
+    const agr_name = String(row.agr_name||row.AGR_NAME||'').trim();
+    if (!userid||!agr_name) continue;
+    await pool.query(
+      `INSERT INTO cov_roles (userid,agr_name,agr_description) VALUES ($1,$2,$3) ON CONFLICT (userid,agr_name) DO UPDATE SET agr_description=EXCLUDED.agr_description`,
+      [userid, agr_name, String(row.agr_description||row.AGR_DESCRIPTION||'').trim()]
+    );
+    inserted++;
+  }
+  return { inserted };
+}
+
+export async function loadCoverageRolesFromDb(realm) {
+  await ensureCoverageTables();
+  const realmConfig = await getSapRealm(realm);
+  let refDate = realmConfig?.realm_reference_date;
+  if (!refDate) refDate = new Date().toISOString().split('T')[0];
+  else refDate = refDate instanceof Date ? refDate.toISOString().split('T')[0] : String(refDate);
+
+  const agrUsers = `sap_raw_${realm}_agr_users`;
+  const rolesInfo = `yr_${realm}_roles_infos`;
+  if (!(await tableExists(agrUsers))) throw new Error(`SAP table agr_users not found. Import SAP tables first.`);
+
+  const users = (await pool.query(`SELECT userid FROM cov_users`)).rows;
+  if (!users.length) return { inserted: 0 };
+  const userIds = users.map(r => r.userid);
+
+  const hasRI = (await pool.query(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name=$1)`,[rolesInfo])).rows[0].exists;
+  let rolesRes;
+  if (hasRI) {
+    rolesRes = await pool.query(
+      `SELECT au.uname AS userid, au.agr_name, COALESCE(ri.text,'') AS agr_description
+       FROM "${agrUsers}" au LEFT JOIN "${rolesInfo}" ri ON ri.agr_name=au.agr_name
+       WHERE au.uname=ANY($1) AND au.from_dat<=$2 AND (au.to_dat IS NULL OR au.to_dat>=$2)`,
+      [userIds, refDate]
+    );
+  } else {
+    rolesRes = await pool.query(
+      `SELECT uname AS userid, agr_name, '' AS agr_description FROM "${agrUsers}"
+       WHERE uname=ANY($1) AND from_dat<=$2 AND (to_dat IS NULL OR to_dat>=$2)`,
+      [userIds, refDate]
+    );
+  }
+
+  await pool.query(`DELETE FROM cov_roles`);
+  let inserted = 0;
+  for (const r of rolesRes.rows) {
+    await pool.query(
+      `INSERT INTO cov_roles (userid,agr_name,agr_description) VALUES ($1,$2,$3) ON CONFLICT (userid,agr_name) DO UPDATE SET agr_description=EXCLUDED.agr_description`,
+      [r.userid, r.agr_name, r.agr_description]
+    );
+    inserted++;
+  }
+  return { inserted };
+}
+
+export async function getCoverageRoles(limit=200, offset=0) {
+  if (!(await tableExists('cov_roles'))) return { rows:[], total:0 };
+  const total = Number((await pool.query(`SELECT COUNT(*) AS c FROM cov_roles`)).rows[0].c);
+  const res = await pool.query(`SELECT userid, agr_name, agr_description FROM cov_roles ORDER BY userid, agr_name LIMIT $1 OFFSET $2`, [limit, offset]);
+  return { rows: res.rows, total };
+}
+
+export async function runCoverageAnalysis(realm) {
+  await ensureCoverageTables();
+  const realmConfig = await getSapRealm(realm);
+  let refDate = realmConfig?.realm_reference_date;
+  if (!refDate) refDate = new Date().toISOString().split('T')[0];
+  else refDate = refDate instanceof Date ? refDate.toISOString().split('T')[0] : String(refDate);
+
+  const agrTcodes  = `sap_raw_${realm}_agr_tcodes`;
+  const statsTable = `yr_${realm}_statistic_slim`;
+  const agrUsers   = `sap_raw_${realm}_agr_users`;
+
+  if (!(await tableExists(agrTcodes))) throw new Error(`SAP table agr_tcodes not found. Import SAP tables first.`);
+  const hasStats = await tableExists(statsTable);
+
+  await pool.query(`DELETE FROM cov_results`);
+  const users = (await pool.query(`SELECT userid, firstname, lastname FROM cov_users`)).rows;
+
+  for (const user of users) {
+    const uid = user.userid;
+
+    // Tcodes from assigned roles in cov_roles
+    const roleTcodeRes = await pool.query(
+      `SELECT cr.agr_name, cr.agr_description, at.tcode AS tcode
+       FROM cov_roles cr
+       INNER JOIN "${agrTcodes}" at ON at.agr_name=cr.agr_name
+       WHERE cr.userid=$1 AND at.tcode IS NOT NULL AND at.tcode NOT IN ('','*')`,
+      [uid]
+    );
+    const roleTcodeMap = {};
+    for (const r of roleTcodeRes.rows) {
+      if (!roleTcodeMap[r.tcode]) roleTcodeMap[r.tcode] = { agr_name: r.agr_name, agr_description: r.agr_description };
+    }
+
+    // Usage stats
+    const usedTcodes = {};
+    if (hasStats) {
+      const sRes = await pool.query(
+        `SELECT action as tcode, SUM(nexec) AS n FROM "${statsTable}" WHERE account=$1 and actiontype = 'T' GROUP BY action`, [uid]
+      );
+      for (const r of sRes.rows) usedTcodes[r.tcode] = Number(r.n);
+    }
+
+    // Current system tcodes (for ALREADY_MISSING)
+    const currentTcodes = new Set();
+    if (hasStats && await tableExists(agrUsers)) {
+      const cRes = await pool.query(
+        `SELECT at.tcode AS tcode FROM "${agrUsers}" au
+         INNER JOIN "${agrTcodes}" at ON at.agr_name=au.agr_name
+         WHERE au.uname=$1 AND au.from_dat<=$2 AND (au.to_dat IS NULL OR au.to_dat>=$2)
+           AND at.tcode IS NOT NULL AND at.tcode NOT IN ('','*')`,
+        [uid, refDate]
+      );
+      for (const r of cRes.rows) currentTcodes.add(r.tcode);
+    }
+
+    const allTcodes = new Set([...Object.keys(roleTcodeMap), ...Object.keys(usedTcodes)]);
+    for (const tcode of allTcodes) {
+      const inRole = !!roleTcodeMap[tcode];
+      const nExec  = usedTcodes[tcode] || 0;
+      const used   = nExec > 0;
+      let coverage;
+      if (inRole && used)                              coverage = '01-COVERED';
+      else if (!inRole && used && !currentTcodes.has(tcode)) coverage = '04-ALREADY_MISSING';
+      else if (!inRole && used)                        coverage = '02-MISSING';
+      else                                             coverage = '03-EXTRA';
+      const ri = roleTcodeMap[tcode] || { agr_name:'', agr_description:'' };
+      await pool.query(
+        `INSERT INTO cov_results (userid,firstname,lastname,agr_name,agr_description,tcode,tcode_description,coverage,n_exec) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [uid, user.firstname, user.lastname, ri.agr_name, ri.agr_description, tcode, '', coverage, nExec]
+      );
+    }
+  }
+
+  const total = Number((await pool.query(`SELECT COUNT(*) AS c FROM cov_results`)).rows[0].c);
+  const preview = (await pool.query(`SELECT * FROM cov_results ORDER BY userid, coverage, tcode LIMIT 100`)).rows;
+  return { total, rows: preview };
+}
+
+export async function getCoverageResults(limit=100, offset=0) {
+  if (!(await tableExists('cov_results'))) return { rows:[], total:0 };
+  const total = Number((await pool.query(`SELECT COUNT(*) AS c FROM cov_results`)).rows[0].c);
+  const res = await pool.query(`SELECT * FROM cov_results ORDER BY userid, coverage, tcode LIMIT $1 OFFSET $2`, [limit, offset]);
+  return { rows: res.rows, total };
+}
