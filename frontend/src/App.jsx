@@ -300,6 +300,11 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       loadSodRaElements();
       loadSodRaResults(0);
     }
+    else if (section === 'coverage') {
+      covLoadResults(0);
+      covLoadRoles();
+      covLoadUsers();
+    }
   }, [section]);
 
   async function runCheck(key, path, setter) {
@@ -3043,7 +3048,7 @@ async function executeRfcBatch() {
               {!sidebarCollapsed && <span>SOD & Audit</span>}
             </button>
             <button style={navBtnStyle(section === 'coverage')} disabled={!selectedRealm} onClick={() => setSection('coverage')} title="Coverage">
-              <span style={{ fontSize: 16 }}>📊</span>
+              <span style={{ fontSize: 16 }}>⚖️</span>
               {!sidebarCollapsed && <span>Coverage</span>}
             </button>
           </div>
