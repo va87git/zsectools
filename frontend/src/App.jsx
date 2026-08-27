@@ -160,6 +160,27 @@ export default function App() {
   const [sodDeleteLoading, setSodDeleteLoading] = useState(false);
   const [sodDeleteMsg, setSodDeleteMsg] = useState('');
   const [sodDeleteErr, setSodDeleteErr] = useState('');
+
+  // Coverage section state
+  const [covUserPattern, setCovUserPattern] = useState('');
+  const [covUserLoading, setCovUserLoading] = useState(false);
+  const [covUserMsg, setCovUserMsg] = useState('');
+  const [covUserErr, setCovUserErr] = useState('');
+  const [covUsers, setCovUsers] = useState([]);
+  const [covUsersTotal, setCovUsersTotal] = useState(0);
+  const [covRoles, setCovRoles] = useState([]);
+  const [covRolesTotal, setCovRolesTotal] = useState(0);
+  const [covRolesLoading, setCovRolesLoading] = useState(false);
+  const [covRolesMsg, setCovRolesMsg] = useState('');
+  const [covRolesErr, setCovRolesErr] = useState('');
+  const [covRunLoading, setCovRunLoading] = useState(false);
+  const [covRunMsg, setCovRunMsg] = useState('');
+  const [covRunErr, setCovRunErr] = useState('');
+  const [covResults, setCovResults] = useState([]);
+  const [covResultsTotal, setCovResultsTotal] = useState(0);
+  const [covResultsPage, setCovResultsPage] = useState(0);
+  const covUsersFileRef = useRef(null);
+  const covRolesFileRef = useRef(null);
   const sodElementsFileInputRef = useRef(null);
   const [sodImportElementsLoading, setSodImportElementsLoading] = useState(false);
 
@@ -1067,7 +1088,6 @@ async function executeRfcBatch() {
         body: JSON.stringify({
           realm: selectedRealm.trim(),
           reportType: selectedReport,
-          //added by me: to roll back, remove rolePattern and the comma after reportDays
           days: reportDays,
           rolePattern: reportPattern
         })
@@ -2319,6 +2339,287 @@ async function executeRfcBatch() {
     }
   }
 
+  // ── COVERAGE FUNCTIONS ────────────────────────────────────────────────────
+
+  async function covLoadUsers() {
+    try {
+      const data = await fetchJson(`/api/coverage/users?limit=200&offset=0`);
+      setCovUsers(data.rows || []);
+      setCovUsersTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function covLoadRoles() {
+    try {
+      const data = await fetchJson(`/api/coverage/roles?limit=200&offset=0`);
+      setCovRoles(data.rows || []);
+      setCovRolesTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function covLoadResults(page = 0) {
+    setCovResultsPage(page);
+    try {
+      const data = await fetchJson(`/api/coverage/results?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+      setCovResults(data.rows || []);
+      setCovResultsTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function covAddUser() {
+    setCovUserErr(''); setCovUserMsg('');
+    if (!covUserPattern.trim()) { setCovUserErr('Enter a user pattern'); return; }
+    setCovUserLoading(true);
+    try {
+      const r = await fetchJson('/api/coverage/add-user', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim(), pattern: covUserPattern.trim() }) });
+      setCovUserMsg(`Added ${r.added} user(s)`);
+      covLoadUsers();
+    } catch (e) { setCovUserErr(e.message); }
+    finally { setCovUserLoading(false); }
+  }
+
+  async function covClearUsers() {
+    if (!window.confirm('Clear all coverage users?')) return;
+    await fetchJson('/api/coverage/clear', { method: 'POST', body: JSON.stringify({ target: 'users' }) });
+    setCovUsers([]); setCovUsersTotal(0); setCovUserMsg('Users cleared.');
+  }
+
+  function covHandleUsersFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) return;
+      const headers = lines[0].split('\t').map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(l => {
+        const vals = l.split('\t');
+        return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+      });
+      setCovUserLoading(true);
+      try {
+        const r = await fetchJson('/api/coverage/import-users-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
+        setCovUserMsg(`Imported ${r.inserted} user(s) from file`);
+        covLoadUsers();
+      } catch (ex) { setCovUserErr(ex.message); }
+      finally { setCovUserLoading(false); if (covUsersFileRef.current) covUsersFileRef.current.value = ''; }
+    };
+    reader.readAsText(file);
+  }
+
+  function covHandleRolesFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) return;
+      const headers = lines[0].split('\t').map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(l => {
+        const vals = l.split('\t');
+        return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+      });
+      setCovRolesLoading(true);
+      try {
+        const r = await fetchJson('/api/coverage/import-roles-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
+        setCovRolesMsg(`Imported ${r.inserted} role(s) from file`);
+        covLoadRoles();
+      } catch (ex) { setCovRolesErr(ex.message); }
+      finally { setCovRolesLoading(false); if (covRolesFileRef.current) covRolesFileRef.current.value = ''; }
+    };
+    reader.readAsText(file);
+  }
+
+  async function covLoadRolesFromDb() {
+    setCovRolesErr(''); setCovRolesMsg('');
+    setCovRolesLoading(true);
+    try {
+      const r = await fetchJson('/api/coverage/load-roles-from-db', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim() }) });
+      setCovRolesMsg(`Loaded ${r.inserted} role assignment(s) from DB`);
+      covLoadRoles();
+    } catch (e) { setCovRolesErr(e.message); }
+    finally { setCovRolesLoading(false); }
+  }
+
+  async function covClearRoles() {
+    if (!window.confirm('Clear all coverage roles?')) return;
+    await fetchJson('/api/coverage/clear', { method: 'POST', body: JSON.stringify({ target: 'roles' }) });
+    setCovRoles([]); setCovRolesTotal(0); setCovRolesMsg('Roles cleared.');
+  }
+
+  async function covRun() {
+    setCovRunErr(''); setCovRunMsg('');
+    if (!selectedRealm) { setCovRunErr('Select an active SAP realm first'); return; }
+    setCovRunLoading(true);
+    try {
+      const r = await fetchJson('/api/coverage/run', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim() }) });
+      setCovRunMsg(`Analysis complete: ${r.total} result(s)`);
+      setCovResults(r.rows || []);
+      setCovResultsTotal(r.total || 0);
+      setCovResultsPage(0);
+    } catch (e) { setCovRunErr(e.message); }
+    finally { setCovRunLoading(false); }
+  }
+
+  async function covExportResults() {
+    if (!covResultsTotal) return;
+    //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+    const resp = await fetch(`${API_BASE}/api/coverage/results/export-csv`);
+    if (!resp.ok) { alert('Export failed'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `coverage_results_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderCoverageSection() {
+    const panelStyle = { background: 'white', border: '1px solid #ddd', borderRadius: 8, padding: 24, marginBottom: 24 };
+    const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
+    const inputStyle = { padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+    const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
+    const smallBtn = (bg) => ({ ...btnStyle(bg), padding: '4px 10px', fontSize: 12 });
+
+    return (
+      <div style={{ maxWidth: 1100 }}>
+        <h1>Coverage</h1>
+        <p style={{ color: '#666', marginBottom: 24 }}>Analyze role coverage against actual user transaction usage.</p>
+
+        {/* Users panel */}
+        <div style={panelStyle}>
+          <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Users to Analyze</h2>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
+            <div style={{ flex: 2 }}>
+              <label style={labelStyle}>User ID (wildcards % and _ supported)</label>
+              <input style={inputStyle} value={covUserPattern} onChange={e => setCovUserPattern(e.target.value)}
+                placeholder="e.g. ZTEST%" onKeyDown={e => e.key === 'Enter' && covAddUser()} />
+            </div>
+            <button style={btnStyle('#2e7d32')} onClick={covAddUser} disabled={covUserLoading}>
+              {covUserLoading ? 'Adding...' : 'Add user'}
+            </button>
+            <span style={{ color: '#555', fontSize: 13, alignSelf: 'center' }}>Upload CSV/TSV File</span>
+            <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
+            <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
+            <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
+          </div>
+          {covUserMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covUserMsg}</p>}
+          {covUserErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covUserErr}</p>}
+          {covUsers.length > 0 && (
+            <div style={{ marginTop: 12, overflowX: 'auto', maxHeight: 200, overflowY: 'auto' }}>
+              <p style={{ fontSize: 12, color: '#666', margin: '0 0 6px' }}>Showing {covUsers.length} of {covUsersTotal} user(s)</p>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: '#f5f5f5' }}>
+                  {['User ID', 'First Name', 'Last Name'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                </tr></thead>
+                <tbody>{covUsers.map((u, i) => (
+                  <tr key={u.userid} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.userid}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.firstname}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.lastname}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Roles panel */}
+        <div style={panelStyle}>
+          <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Role Assignments</h2>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+            <button style={btnStyle('#1a73e8')} onClick={covLoadRolesFromDb} disabled={covRolesLoading}>
+              {covRolesLoading ? 'Loading...' : 'Get as-is roles from DB'}
+            </button>
+            <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
+            <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
+            <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
+            <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
+          </div>
+          {covRolesMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covRolesMsg}</p>}
+          {covRolesErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covRolesErr}</p>}
+          {covRoles.length > 0 && (
+            <div style={{ marginTop: 12, overflowX: 'auto', maxHeight: 200, overflowY: 'auto' }}>
+              <p style={{ fontSize: 12, color: '#666', margin: '0 0 6px' }}>Showing {covRoles.length} of {covRolesTotal} assignment(s)</p>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: '#f5f5f5' }}>
+                  {['User ID', 'Role', 'Description'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                </tr></thead>
+                <tbody>{covRoles.map((r, i) => (
+                  <tr key={`${r.userid}-${r.agr_name}`} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.userid}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_name}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_description}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Run & Results panel */}
+        <div style={panelStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 style={{ margin: 0, fontSize: 16 }}>Results</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btnStyle('#555')} onClick={() => covLoadResults(0)}>Refresh</button>
+              <button style={btnStyle('#2e7d32')} onClick={covExportResults} disabled={!covResultsTotal}>Export CSV</button>
+              <button style={btnStyle('#1a73e8')} onClick={covRun} disabled={covRunLoading}>
+                {covRunLoading ? 'Running...' : 'Run Coverage Analysis'}
+              </button>
+            </div>
+          </div>
+          {covRunMsg && <p style={{ color: 'green', fontSize: 13, margin: '0 0 8px' }}>{covRunMsg}</p>}
+          {covRunErr && <p style={{ color: 'crimson', fontSize: 13, margin: '0 0 8px' }}>{covRunErr}</p>}
+          {covRunLoading ? (
+            <p style={{ color: '#888', fontSize: 13 }}>Running analysis...</p>
+          ) : covResults.length > 0 ? (
+            <>
+              <div style={{ overflowX: 'auto', maxHeight: 380, overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {Object.keys(covResults[0]).map(k => (
+                        <th key={k} style={{ padding: '5px 8px', textAlign: 'left', borderBottom: '1px solid #ddd', whiteSpace: 'nowrap' }}>{k}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {covResults.map((row, i) => {
+                      const bg = row.coverage === '01-COVERED' ? '#e8f5e9'
+                               : row.coverage === '02-MISSING' ? '#ffebee'
+                               : row.coverage === '03-EXTRA'   ? '#fff8e1'
+                               : '#fce4ec';
+                      return (
+                        <tr key={i} style={{ background: bg }}>
+                          {Object.values(row).map((v, j) => (
+                            <td key={j} style={{ padding: '4px 8px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>
+                              {v === null || v === undefined ? '' : String(v)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Showing {covResultsPage * PAGE_SIZE + 1}–{Math.min((covResultsPage + 1) * PAGE_SIZE, covResultsTotal)} of {covResultsTotal}</span>
+                <span>
+                  <button onClick={() => covLoadResults(0)} disabled={covResultsPage === 0} style={{ marginRight: 4 }}>First</button>
+                  <button onClick={() => covLoadResults(covResultsPage - 1)} disabled={covResultsPage === 0} style={{ marginRight: 4 }}>Prev</button>
+                  <button onClick={() => covLoadResults(covResultsPage + 1)} disabled={covResultsPage >= Math.ceil(covResultsTotal / PAGE_SIZE) - 1} style={{ marginRight: 4 }}>Next</button>
+                  <button onClick={() => covLoadResults(Math.ceil(covResultsTotal / PAGE_SIZE) - 1)} disabled={covResultsPage >= Math.ceil(covResultsTotal / PAGE_SIZE) - 1}>Last</button>
+                </span>
+              </div>
+            </>
+          ) : (
+            <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+              No results yet. Add users, load roles, then click Run Coverage Analysis.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function renderSodSection() {
     const panelStyle = { background: 'white', border: '1px solid #ddd', borderRadius: 8, padding: 24, marginBottom: 24 };
     const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
@@ -2741,6 +3042,10 @@ async function executeRfcBatch() {
               <span style={{ fontSize: 16 }}>🛡️</span>
               {!sidebarCollapsed && <span>SOD & Audit</span>}
             </button>
+            <button style={navBtnStyle(section === 'coverage')} disabled={!selectedRealm} onClick={() => setSection('coverage')} title="Coverage">
+              <span style={{ fontSize: 16 }}>📊</span>
+              {!sidebarCollapsed && <span>Coverage</span>}
+            </button>
           </div>
         </div>
 
@@ -2780,6 +3085,7 @@ async function executeRfcBatch() {
         {section === 'reports' ? renderReportsSection() : null}
         {section === 'rfc' ? renderRfcSection() : null}
         {section === 'sod' ? renderSodSection() : null}
+        {section === 'coverage' ? renderCoverageSection() : null}
       </section>
     </main>
   );
