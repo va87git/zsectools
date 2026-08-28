@@ -3539,9 +3539,16 @@ export async function runCoverageAnalysis(realm) {
 
   const agrTcodes  = `sap_raw_${realm}_agr_tcodes`;
   const statsTable = `yr_${realm}_statistic_slim`;
-  const agrUsers   = `sap_raw_${realm}_agr_users`;
+  const agrUsers = `sap_raw_${realm}_agr_users`;
 
-  if (!(await tableExists(agrTcodes))) throw new Error(`SAP table agr_tcodes not found. Import SAP tables first.`);
+  const requiredTables = [agrTcodes, agrUsers, statsTable];
+
+  for (const tableName of requiredTables) {
+    if (!(await tableExists(tableName))) {
+      throw new Error(`Required table '${tableName}' not found. Please import missing tables or run buildAdditionalInfos first.`);
+    }
+  }
+
   const hasStats = await tableExists(statsTable);
 
   await pool.query(`DELETE FROM cov_results`);
