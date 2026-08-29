@@ -1176,7 +1176,6 @@ async function executeRfcBatch() {
     return (
       <>
         <h1>Quality and prerequisites check</h1>
-        <p style={{ marginTop: 0, color: '#666' }}>build V1.01</p>
         <p>Use this section for backend/API health checks.</p>
 
         {renderRealmSelector()}
@@ -1242,11 +1241,15 @@ async function executeRfcBatch() {
           <button style={tabBtn(settingsTab === 'health')} onClick={() => setSettingsTab('health')}>
             Health Checks
           </button>
+          <button style={tabBtn(settingsTab === 'about')} onClick={() => setSettingsTab('about')}>
+            About
+          </button>
         </div>
 
         {/* Selected tab content */}
         {settingsTab === 'general' && renderSettingsGeneral()}
         {settingsTab === 'health' && renderHealthSection()}
+        {settingsTab === 'about' && renderAboutSection()}
       </>
     );
   }
@@ -1259,6 +1262,66 @@ async function executeRfcBatch() {
           <p style={{ color: '#888', fontSize: 13 }}>
             Theme settings will be available here (coming soon).
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  function renderAboutSection() {
+    return (
+      <div style={{ maxWidth: 520 }}>
+        <div
+          style={{
+            ...panelStyle,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            padding: '24px',
+          }}
+        >
+          {/* Logo */}
+          <div
+            style={{
+              width: '180px',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              marginBottom: '20px',
+              backgroundColor: '#000',
+            }}
+          >
+            <img
+              src={brandBanner}
+              alt="Brand Banner"
+              style={{ width: '100%', display: 'block' }}
+            />
+          </div>
+
+          {/* App info */}
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', color: '#111' }}>
+            ZSecTools
+          </h3>
+
+          <p style={{ margin: '0 0 16px 0', color: '#666', fontSize: '14px' }}>
+            SAP Security & Authorization Suite
+          </p>
+
+          {/* Version */}
+          <span
+            style={{
+              display: 'inline-block',
+              backgroundColor: '#f0f4f8',
+              color: '#2563eb',
+              fontSize: '12px',
+              fontWeight: '600',
+              padding: '4px 12px',
+              borderRadius: '16px',
+              border: '1px solid #dbeafe',
+            }}
+          >
+            v{__APP_VERSION__}
+          </span>
         </div>
       </div>
     );
@@ -3094,7 +3157,7 @@ async function executeRfcBatch() {
           {/* Banner */}
           {!sidebarCollapsed && (
             <div style={{ marginBottom: '16px', textAlign: 'center' }}>
-              <img src={brandBanner} alt="Brand Banner" style={{ maxWidth: '100%', height: 'auto' }} />
+              <img src={brandBanner} alt="Brand Banner" style={{ maxWidth: '100%', height: 'auto', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', backgroundColor: '#000' }} />
             </div>
           )}
 
