@@ -21,7 +21,7 @@
 
 ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), and perform SOD risk analysis against a configurable rule matrix.
 
-The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
+The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, **Coverage**, and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
 
 ## SAP Realms
 

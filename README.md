@@ -171,6 +171,7 @@ See [`userguide.md`](./userguide.md) for a detailed walkthrough of every section
 ## Contributing
 
 Contributions are welcome, whether in the form of bug reports, feature suggestions, documentation improvements, or pull requests.
+Before start contributing, please see [`Contributing guideline`](./.github/CONTRIBUTING.md)
 
 ## License
 

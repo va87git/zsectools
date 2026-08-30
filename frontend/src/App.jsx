@@ -305,6 +305,9 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
       covLoadRoles();
       covLoadUsers();
     }
+    else if (section === 'sap-realms') {
+      loadRealmList();
+    }
   }, [section]);
 
   async function runCheck(key, path, setter) {
@@ -1269,7 +1272,8 @@ async function executeRfcBatch() {
 
   function renderAboutSection() {
     return (
-      <div style={{ maxWidth: 520 }}>
+      <div style={{ maxWidth: 520, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Panel 1: Branding & Version Info */}
         <div
           style={{
             ...panelStyle,
@@ -1280,7 +1284,12 @@ async function executeRfcBatch() {
             padding: '24px',
           }}
         >
-          {/* Logo */}
+          {/* Section Header */}
+          <h4 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '600', color: '#111' }}>
+            App Version
+          </h4>
+
+          {/* Brand Logo Container */}
           <div
             style={{
               width: '180px',
@@ -1298,7 +1307,7 @@ async function executeRfcBatch() {
             />
           </div>
 
-          {/* App info */}
+          {/* Application Title & Description */}
           <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', color: '#111' }}>
             ZSecTools
           </h3>
@@ -1307,7 +1316,7 @@ async function executeRfcBatch() {
             SAP Security & Authorization Suite
           </p>
 
-          {/* Version */}
+          {/* Application Version Badge */}
           <span
             style={{
               display: 'inline-block',
@@ -1323,76 +1332,151 @@ async function executeRfcBatch() {
             v{__APP_VERSION__}
           </span>
         </div>
+
+        {/* Panel 2: License & Repository Links & Docs */}
+        <div
+          style={{
+            ...panelStyle,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            padding: '24px',
+            gap: '8px',
+          }}
+        >
+          {/* Section Header */}
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#111' }}>
+            License and Docs
+          </h4>
+
+          {/* License Info */}
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            Released under{' '}
+            <a
+              href="https://github.com/va87git/zsectools/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+            >
+              MIT License, with No-Sale Clause
+            </a>
+          </span>
+
+          {/* Repository Link */}
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            GitHub:{' '}
+            <a
+              href="https://github.com/va87git/zsectools"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+            >
+              ZSecTools
+            </a>
+          </span>
+
+          {/* User Guide Link */}
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            User Guide (found also in root folder):{' '}
+            <a
+              href="https://github.com/va87git/zsectools/blob/main/userguide.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+            >
+              userguide.md
+            </a>
+          </span>
+        </div>
       </div>
     );
   }
 
   function renderRealmSection() {
-    return (
-      <>
-        <h1>SAP Connection Realms</h1>
-        <p>Save multiple SAP connection configurations with a unique <code>realm</code>.</p>
+      return (
+        <>
+          <h1>SAP Connection Realms</h1>
+          <p>Save multiple SAP connection configurations with a unique <code>realm</code>.</p>
 
-        {renderRealmSelector()}
+          {renderRealmSelector()}
 
-        <div style={panelStyle}>
-          <div style={{ marginBottom: 12 }}>
-            <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={loadRealmList}>Refresh Realm List</button>
-            <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={saveRealm}>Save / Update Realm</button>
+          <div style={panelStyle}>
+            <div style={{ marginBottom: 12 }}>
+              <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={loadRealmList}>Refresh Realm List</button>
+              <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={saveRealm}>Save / Update Realm</button>
+              <button
+                style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }}
+                disabled={!selectedRealm && !form.realm}
+                onClick={runSapCheck}
+              >
+                Test Connection (RFCPING)
+              </button>
+            </div>
+
+            {sapRealmError ? <p style={{ color: 'crimson' }}>{sapRealmError}</p> : null}
+            {sapRealmInfo ? <p style={{ color: 'green' }}>{sapRealmInfo}</p> : null}
+
+            {/* Feedback per il test RFCPING quando eseguito da questa sezione */}
+            {sapHealth?.ok ? (
+              <p style={{ color: 'green' }}>
+                RFCPING OK — {sapHealth.latencyMs}ms — {sapHealth.destination?.ashost}/{sapHealth.destination?.client}
+              </p>
+            ) : errors?.sap ? (
+              <p style={{ color: 'crimson' }}>
+                RFCPING Failed: {typeof errors.sap === 'string' ? errors.sap : JSON.stringify(errors.sap)}
+              </p>
+            ) : null}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, alignItems: 'center' }}>
+              <label>realm (a-z, 0-9 only)</label><input value={form.realm} onChange={(e) => updateForm('realm', e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))} />
+              <label>realm description</label><input value={form.realm_description} onChange={(e) => updateForm('realm_description', e.target.value)} />
+              <label>SAP_USER</label><input value={form.sap_user} onChange={(e) => updateForm('sap_user', e.target.value)} />
+              <label>SAP_PASSWORD</label><input type="password" value={form.sap_password} onChange={(e) => updateForm('sap_password', e.target.value)} />
+              <label>SAP_ASHOST</label><input value={form.sap_ashost} onChange={(e) => updateForm('sap_ashost', e.target.value)} />
+              <label>SAP_SYSNR</label><input value={form.sap_sysnr} onChange={(e) => updateForm('sap_sysnr', e.target.value)} />
+              <label>SAP_CLIENT</label><input value={form.sap_client} onChange={(e) => updateForm('sap_client', e.target.value)} />
+              <label>SAP_SID</label><input value={form.sap_sid} onChange={(e) => updateForm('sap_sid', e.target.value)} />
+              <label>SAP_LANGUAGE</label><select value={form.sap_language} onChange={(e) => updateForm('sap_language', e.target.value)} style={{ height: '30px' }}>
+                  <option value="EN">EN</option>
+                  <option value="IT">IT</option>
+                </select>
+              <label>SAP_ROUTER</label><input value={form.sap_router} onChange={(e) => updateForm('sap_router', e.target.value)} />
+              <label>Realm reference date</label><input type="date" value={form.realm_reference_date} onChange={(e) => updateForm('realm_reference_date', e.target.value)} />
+            </div>
           </div>
 
-          {sapRealmError ? <p style={{ color: 'crimson' }}>{sapRealmError}</p> : null}
-          {sapRealmInfo ? <p style={{ color: 'green' }}>{sapRealmInfo}</p> : null}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, alignItems: 'center' }}>
-            <label>realm (a-z, 0-9 only)</label><input value={form.realm} onChange={(e) => updateForm('realm', e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))} />
-            <label>realm description</label><input value={form.realm_description} onChange={(e) => updateForm('realm_description', e.target.value)} />
-            <label>SAP_USER</label><input value={form.sap_user} onChange={(e) => updateForm('sap_user', e.target.value)} />
-            <label>SAP_PASSWORD</label><input type="password" value={form.sap_password} onChange={(e) => updateForm('sap_password', e.target.value)} />
-            <label>SAP_ASHOST</label><input value={form.sap_ashost} onChange={(e) => updateForm('sap_ashost', e.target.value)} />
-            <label>SAP_SYSNR</label><input value={form.sap_sysnr} onChange={(e) => updateForm('sap_sysnr', e.target.value)} />
-            <label>SAP_CLIENT</label><input value={form.sap_client} onChange={(e) => updateForm('sap_client', e.target.value)} />
-            <label>SAP_SID</label><input value={form.sap_sid} onChange={(e) => updateForm('sap_sid', e.target.value)} />
-            <label>SAP_LANGUAGE</label><select value={form.sap_language} onChange={(e) => updateForm('sap_language', e.target.value)} style={{ height: '30px' }}>
-                <option value="EN">EN</option>
-                <option value="IT">IT</option>
-              </select>
-            <label>SAP_ROUTER</label><input value={form.sap_router} onChange={(e) => updateForm('sap_router', e.target.value)} />
-            <label>Realm reference date</label><input type="date" value={form.realm_reference_date} onChange={(e) => updateForm('realm_reference_date', e.target.value)} />
+          <div style={panelStyle}>
+            <h3>Saved realms</h3>
+            {realms.length === 0 ? <p>No saved realms loaded.</p> : (
+              <ul>
+                {realms.map((item) => (
+                  <li key={item.realm} style={{ marginBottom: '8px' }}>
+                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Load</button>
+                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>
+                    <button
+                      style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }}
+                      onClick={async () => {
+                        if (!confirm(`Delete realm "${item.realm}"? This cannot be undone.`)) return;
+                        try {
+                          await fetchJson(`/api/sap-realms/${encodeURIComponent(item.realm)}`, { method: 'DELETE' });
+                          setSapRealmInfo(`Realm deleted: ${item.realm}`);
+                          await loadRealmList();
+                          if (selectedRealm === item.realm) setSelectedRealm('');
+                        } catch (err) {
+                          setSapRealmError(err.message);
+                        }
+                      }}
+                    >Delete</button>
+                    {item.realm} {item.realm_description ? `(${item.realm_description})` : ''} — ({item.sap_ashost}/{item.sap_client})
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
-
-        <div style={panelStyle}>
-          <h3>Saved realms</h3>
-          {realms.length === 0 ? <p>No saved realms loaded.</p> : (
-            <ul>
-              {realms.map((item) => (
-                <li key={item.realm} style={{ marginBottom: '8px' }}>
-                  <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Load</button>
-                  <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>
-                  <button
-                    style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }}
-                    onClick={async () => {
-                      if (!confirm(`Delete realm "${item.realm}"? This cannot be undone.`)) return;
-                      try {
-                        await fetchJson(`/api/sap-realms/${encodeURIComponent(item.realm)}`, { method: 'DELETE' });
-                        setSapRealmInfo(`Realm deleted: ${item.realm}`);
-                        await loadRealmList();
-                        if (selectedRealm === item.realm) setSelectedRealm('');
-                      } catch (err) {
-                        setSapRealmError(err.message);
-                      }
-                    }}
-                  >Delete</button>
-                  {item.realm} {item.realm_description ? `(${item.realm_description})` : ''} — ({item.sap_ashost}/{item.sap_client})
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </>
-    );
-  }
+        </>
+      );
+    }
 
   function renderReportsSection() {
     return (
