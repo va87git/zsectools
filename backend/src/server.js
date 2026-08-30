@@ -4,6 +4,7 @@ if (typeof process.pkg !== 'undefined') {
   process.jsFlags = "--no-freeze-flags-after-init";
 }
 import 'dotenv/config';
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import fs from 'node:fs/promises';
@@ -64,10 +65,40 @@ import {
   listAvailableRfcs
 } from './sap.js';
 
-import path from 'path';
-
 // Compute the frontend path based on the execution folder (App)
 import { fileURLToPath } from 'url'; // Keep this if needed for development, otherwise it can stay
+
+// ── SAP NW RFC SDK Initialization from .env ──────────────────────────────
+function initSapSdkFromEnv() {
+  const sdkPath = String(process.env.SAPNWRFC_HOME || '').trim();
+  if (!sdkPath) return;
+
+  if (process.platform === 'win32') {
+    const libPath = path.join(sdkPath, 'lib');
+    const currentPath = process.env.PATH || '';
+
+    if (!currentPath.includes(libPath)) {
+      process.env.PATH = `${libPath};${sdkPath};${currentPath}`;
+    }
+
+    if (typeof process.addDllDirectory === 'function') {
+      try {
+        process.addDllDirectory(libPath);
+      } catch (dllError) {
+        console.error('[SAP SDK] Impossibile to add DLL to directory:', dllError);
+      }
+    }
+  } else {
+    const libPath = path.join(sdkPath, 'lib');
+    const currentLdPath = process.env.LD_LIBRARY_PATH || '';
+
+    if (!currentLdPath.includes(libPath)) {
+      process.env.LD_LIBRARY_PATH = `${libPath}:${currentLdPath}`;
+    }
+  }
+}
+
+initSapSdkFromEnv();
 
 // This single line covers both development mode and the portable release
 const frontendPath = path.resolve(process.cwd(), 'frontend', 'dist');
@@ -78,24 +109,11 @@ const app = express();
 
 // ... after initializing 'app = express()' ...
 
-// Serve the frontend static files
-// Assuming the built frontend is in a folder named 'dist' or 'public'
-/*
-app.use(express.static(path.join(__dirname, '../../frontend/dist')));
-
-// Handle frontend routing (required for React/Vite/Vue apps)
-app.get('/*', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
-});
-*/
-
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173'
 }));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.text({ limit: '500mb' }));
-
-
 
 // 1. Serve static files BEFORE anything else
 // Make sure frontendPath is correctly defined above
@@ -104,12 +122,6 @@ app.use(express.static(frontendPath));
 // 2. API routes
 //app.use('/api/health', (req, res) => { /* ... */ });
 // ... all other app.get('/api/...') routes ...
-
-
-
-
-
-
 
 
 app.get('/api/health', (_req, res) => {
@@ -226,17 +238,8 @@ app.get('/api/diagnostics/sap-sdk', async (_req, res) => {
   });
 });
 
-app.get('/api/settings/sap-sdk-path', async (_req, res) => {
-  try {
-    const row = await getAppSetting('sap_nwrfc_home');
-    res.json({
-      ok: true,
-      value: row?.value || '',
-      updatedAt: row?.updated_at || null
-    });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error?.message || 'Failed to read setting' });
-  }
+app.get('/api/settings/sap-sdk-path', (_req, res) => {
+  res.json({ sapnwrfcHome: process.env.SAPNWRFC_HOME || '' });
 });
 
 app.put('/api/settings/sap-sdk-path', async (req, res) => {
@@ -1345,46 +1348,6 @@ app.get('/api/coverage/results/export-csv', async (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-async function applySapSdkPathFromSettings() {
-  const row = await getAppSetting('sap_nwrfc_home');
-  const sdkPath = String(row?.value || '').trim();
-  if (!sdkPath) {
-    return;
-  }
-
-  process.env.SAPNWRFC_HOME = sdkPath;
-
-  // Best-effort: make native libs discoverable for dlopen().
-  // Linux uses LD_LIBRARY_PATH, Windows uses PATH.
-  if (process.platform === 'win32') {
-    const current = process.env.PATH || '';
-	// change: on windows .dll needed inside folder bin!
-  const libPath = `${sdkPath}\\lib`;
-  //was: if (!current.includes(sdkPath))
-    if (!current.includes(libPath)) {
-      process.env.PATH = `${libPath};${sdkPath};${current}`;
-    }
-
-	//Force Node.js to accept DLLs from this folder
-    try {
-      if (typeof process.addDllDirectory === 'function') {
-        process.addDllDirectory(binPath);
-        // console.log(`[SAP SDK] DLL directory added successfully: ${binPath}`);
-      }
-    } catch (dllError) {
-      console.error("[SAP SDK] Impossibile aggiungere la DLL directory:", dllError);
-    }
-
-  } else {
-    const libPath = `${sdkPath}/lib`;
-    const current = process.env.LD_LIBRARY_PATH || '';
-    if (!current.includes(libPath)) {
-      process.env.LD_LIBRARY_PATH = `${libPath}:${current}`;
-    }
-  }
-}
-
-
 // 3. Middleware finale "Catch-all" correct
 app.use((req, res, next) => {
   // If the request is for an API that does not exist, respond 404
@@ -1405,9 +1368,8 @@ app.use((req, res, next) => {
   });
 });
 
-
 Promise.all([ensureSapRealmTable(), ensureSapImportTables(), ensureAppSettingsTable()])
-  .then(applySapSdkPathFromSettings)
+  //.then(applySapSdkPathFromSettings)
   .then(() => {
     app.listen(port, () => {
       console.log(`[backend] listening on http://localhost:${port}`);

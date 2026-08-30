@@ -212,17 +212,6 @@ export async function deleteSapRealm(realm) {
   await pool.query(`DELETE FROM sap_raw_user_stats WHERE realm = $1`, [realm]);
 
   // Delete all dynamically created raw tables for this realm (sap_raw_<tablename>)
-  // We need to find them first
-  /*
-  const tableResult = await pool.query(
-    `SELECT table_name FROM information_schema.tables
-     WHERE table_schema = 'public' AND table_name LIKE 'sap_raw_%'`
-  );
-
-  for (const table of tableResult.rows) {
-    const tableName = table.table_name;
-    await pool.query(`DELETE FROM "${tableName}" WHERE realm = $1`, [realm]);
-  }*/
 
   //New logic for realm-scoped table cleanup:
   //updated to also delete report and yr tables. Previously: LIKE 'sap_raw_` + realm + `%'`);
@@ -515,19 +504,6 @@ export async function getImportedTableRows(realm, tableName, limit = 100, offset
     const result = await pool.query(
       `SELECT * FROM "${sanitizedTableName}"`
     );
-
-//V2:
-    /*const result = await pool.query(
-      `SELECT * FROM "${sanitizedTableName}"
-       WHERE realm = $1
-       ORDER BY id DESC`
-    );*/
-    //V1:
-               /*const result = await pool.query(
-      SELECT * FROM "${sanitizedTableName}"
-       ORDER BY id DESC
-       LIMIT $1 OFFSET $2,
-      [limit, offset]);*/
 
     // Map back to expected row_data format for frontend compatibility
     const mappedRows = result.rows.map(row => {
@@ -2608,7 +2584,7 @@ WHERE sap_raw_${realm}_AGR_1251.OBJECT = 'S_TCODE'
     //drop the temp table if it exists:
     await client.query(`DROP TABLE IF EXISTS "tmp_sap_raw_${realm}_tstct_local"`);
 
-//****************************statistiche utente:
+//****************************users statistics:
 //WARNING: THE CLIENT (MANDT) IS MISSING IN STATISTICS!!! It may be implicit. Investigate the call
 //remove MANDT from where if not used:
         await client.query(`

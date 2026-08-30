@@ -34,7 +34,7 @@ const sideNavStyle = {
   padding: 16,
   display: 'flex',
   flexDirection: 'column',
-  height: '100%',      // riempie la cella grid (già alta 100vh)
+  height: '100%',
   boxSizing: 'border-box'
 };
 
@@ -328,33 +328,25 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
     await runCheck('sap', `/api/health/sap?realm=${encodeURIComponent(selectedRealm)}`, setSapHealth);
   }
 
-  async function loadSdkPath() {
+  const loadSdkPath = async () => {
     setSdkPathError('');
     setSdkPathInfo('');
     try {
-      const result = await fetchJson('/api/settings/sap-sdk-path');
-      setSdkPath(result.value || '');
-      if (result.updatedAt) {
-        setSdkPathInfo(`Loaded (updated: ${result.updatedAt})`);
+      const res = await fetch('/api/settings/sap-sdk-path');
+      const data = await res.json();
+
+      setSdkPath(data.formattedEnv);
+      if (data.sapnwrfcHome) {
+        setSdkPath(data.sapnwrfcHome);
+        setSdkPathInfo('SDK path successfully loaded from backend .env environment variable.');
+      } else {
+        setSdkPathError('SAPNWRFC_HOME variable is not defined in the backend .env file.');
       }
     } catch (err) {
-      setSdkPathError(err.message);
+      console.error(err);
+      setSdkPathError('Failed to load SDK path from backend environment.');
     }
-  }
-
-  async function saveSdkPath() {
-    setSdkPathError('');
-    setSdkPathInfo('');
-    try {
-      const result = await fetchJson('/api/settings/sap-sdk-path', {
-        method: 'PUT',
-        body: JSON.stringify({ value: sdkPath })
-      });
-      setSdkPathInfo(`Saved (updated: ${result.saved.updated_at})`);
-    } catch (err) {
-      setSdkPathError(err.message);
-    }
-  }
+  };
 
   async function runSdkDiagnostics() {
     setSdkDiag(null);
@@ -642,7 +634,7 @@ async function handleRfcFileUpload(e) {
       const missing = required.filter(field => !headers.includes(field));
 
       if (missing.length > 0) {
-        setRfcError(`Schema mismatch: Mancano le colonne obbligatorie: ${missing.join(', ')}`);
+        setRfcError(`Schema mismatch: Mandatory columns are missing: ${missing.join(', ')}`);
         setRfcPreviewRows([]); // Clear the preview if it is not valid
         return;
       }
@@ -1117,7 +1109,6 @@ async function executeRfcBatch() {
   async function exportReport() {
     if (!reportTableName || !selectedRealm) return;
     try {
-      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       const url = `${API_BASE}/api/reports/export-csv?realm=${encodeURIComponent(selectedRealm.trim())}&tableName=${encodeURIComponent(reportTableName)}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
@@ -1200,17 +1191,25 @@ async function executeRfcBatch() {
             )}
 
         <div style={panelStyle}>
-          <h3>SAP NW RFC SDK path (persisted)</h3>
-          <p style={{ marginTop: 0 }}>Save the SDK base path so the backend applies it at startup.</p>
+          <h3>SAP NW RFC SDK Path (Environment)</h3>
+          <p style={{ marginTop: 0 }}>Check the SDK base path configured in the backend <code>.env</code> file.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 8, alignItems: 'center' }}>
             <label>SDK path</label>
-            <input value={sdkPath} onChange={(e) => setSdkPath(e.target.value)} placeholder="/opt/sap/nwrfcsdk (Linux) or C:\\nwrfcsdk (Windows)" />
+            <input
+              value={sdkPath}
+              readOnly
+              placeholder="Click 'Load' to read SAPNWRFC_HOME from .env"
+            />
           </div>
           <div style={{ marginTop: 10 }}>
-            <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={loadSdkPath}>Load</button>
-            <button style={{ padding: '8px 12px', cursor: 'pointer' }} onClick={saveSdkPath}>Save</button>
-            <button style={{ marginLeft: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={runSdkDiagnostics}>Run diagnostics</button>
+            <button style={{ padding: '8px 12px', cursor: 'pointer' }} onClick={loadSdkPath}>
+              Load
+            </button>
+            <button style={{ marginLeft: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={runSdkDiagnostics}>
+              Run diagnostics
+            </button>
           </div>
+
           {sdkPathError ? <p style={{ color: 'crimson' }}>{sdkPathError}</p> : null}
           {sdkPathInfo ? <p style={{ color: 'green' }}>{sdkPathInfo}</p> : null}
           {sdkDiagError ? <p style={{ color: 'crimson' }}>{sdkDiagError}</p> : null}
@@ -1417,7 +1416,7 @@ async function executeRfcBatch() {
             {sapRealmError ? <p style={{ color: 'crimson' }}>{sapRealmError}</p> : null}
             {sapRealmInfo ? <p style={{ color: 'green' }}>{sapRealmInfo}</p> : null}
 
-            {/* Feedback per il test RFCPING quando eseguito da questa sezione */}
+            {/* RFCPING result */}
             {sapHealth?.ok ? (
               <p style={{ color: 'green' }}>
                 RFCPING OK — {sapHealth.latencyMs}ms — {sapHealth.destination?.ashost}/{sapHealth.destination?.client}
@@ -1452,8 +1451,8 @@ async function executeRfcBatch() {
               <ul>
                 {realms.map((item) => (
                   <li key={item.realm} style={{ marginBottom: '8px' }}>
-                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Load</button>
-                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>
+                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Select</button>
+                    {/*<button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>*/}
                     <button
                       style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }}
                       onClick={async () => {
@@ -2022,8 +2021,6 @@ async function executeRfcBatch() {
         {/* Right: Preview and results */}
         <div style={panelStyle}>
           <h3>Preview & Results</h3>
-
-                  {/* --- ADDED THIS BUTTON --- */}
         <button
           onClick={handleRfcReset}
           style={{
@@ -2040,8 +2037,6 @@ async function executeRfcBatch() {
         >
           Input reset
         </button>
-        {/* --- END BLOCK ADDED --- */}
-
           {rfcPreviewRows.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <p style={{ color: '#666', fontSize: 13 }}>
@@ -2416,7 +2411,6 @@ async function executeRfcBatch() {
       return;
     }
     try {
-      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       const url = `${API_BASE}/api/sod/ra-results?format=csv`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
@@ -2451,7 +2445,6 @@ async function executeRfcBatch() {
       const realmData = await fetchJson(`/api/sap-realms?realm=${encodeURIComponent(selectedRealm.trim())}`);
       const realmLanguage = realmData?.realm?.sap_language || 'EN';
 
-      //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
       const params = new URLSearchParams({
         realm: selectedRealm.trim(),
         rulesetId: sodRuleset,
@@ -2657,7 +2650,6 @@ async function executeRfcBatch() {
 
   async function covExportResults() {
     if (!covResultsTotal) return;
-    //const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
     const resp = await fetch(`${API_BASE}/api/coverage/results/export-csv`);
     if (!resp.ok) { alert('Export failed'); return; }
     const blob = await resp.blob();
@@ -2906,12 +2898,12 @@ async function executeRfcBatch() {
 
         <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
           <div style={{ flex: 1, minWidth: 0, maxWidth: 900 }}>
-        {/* Rule Matrix */}
+        {/* Ruleset */}
         <div style={panelStyle}>
-          <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Rule Matrix</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Ruleset</h2>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Ruleset</label>
+              <label style={labelStyle}>Ruleset ID</label>
               <select
                 value={sodRuleset}
                 onChange={e => setSodRuleset(e.target.value)}
