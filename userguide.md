@@ -27,9 +27,12 @@ The application is organized into sections, accessible from the side panel: **SA
 
 A "Realm" represents a single SAP system you want to connect to. In this section you can create, edit, and delete as many realms as you need, each with its own connection details (application server, system number, client, credentials, and language).
 
-Always verify that the machine running the backend can reach the SAP system referenced by the selected realm — you can confirm this with an RFC ping from the [Health Checks](#health-checks) section.
+Always verify that the machine running the backend can reach the SAP system referenced by the selected realm — you can confirm this with an RFC ping by using the **Test connection (RFCPING)** button.
 
 Selecting an active realm here is **mandatory** to use every other section of the application.
+
+Please also pay attention to **Realm reference date** field: it should match the SAP tables download date, because it will be used as a reference for calculating users and roles validity.
+> **Note**: Users and roles validity is calculated using **Build additional infos** (see [Import SAP Tables](#import-sap-tables)): remember to update it if you are using an already existing realm to import SAP tables multiple times on different days!
 
 ## Import SAP Tables
 

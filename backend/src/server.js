@@ -123,6 +123,58 @@ app.use(express.static(frontendPath));
 //app.use('/api/health', (req, res) => { /* ... */ });
 // ... all other app.get('/api/...') routes ...
 
+// Route to check for GitHub updates
+app.get('/api/settings/check-update', async (_req, res) => {
+  try {
+    // Read package.json version dynamically from filesystem
+    const pkgRaw = await fs.readFile(new URL('../package.json', import.meta.url), 'utf-8');
+    const pkg = JSON.parse(pkgRaw);
+    const currentVersion = pkg.version;
+
+    // GitHub API endpoint for latest release
+    const githubUrl = 'https://api.github.com/repos/va87git/zsectools/releases/latest';
+
+    const response = await fetch(githubUrl, {
+      headers: {
+        'User-Agent': 'ZSecTools-Update-Check' // GitHub API requires User-Agent
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return res.json({
+          ok: true,
+          hasUpdate: false,
+          currentVersion,
+          latestVersion: currentVersion,
+          message: 'No published releases found on GitHub.'
+        });
+      }
+      throw new Error(`GitHub API error: status ${response.status}`);
+    }
+
+    const release = await response.json();
+    // Strip leading 'v' if present in tag name (e.g. "v1.1.0" -> "1.1.0")
+    const latestVersion = release.tag_name ? release.tag_name.replace(/^v/, '') : currentVersion;
+
+    const hasUpdate = latestVersion !== currentVersion;
+
+    res.json({
+      ok: true,
+      currentVersion,
+      latestVersion,
+      hasUpdate,
+      releaseUrl: release.html_url,
+      releaseNotes: release.body
+    });
+  } catch (error) {
+    console.error('[Update Check Error]:', error);
+    res.status(500).json({
+      ok: false,
+      error: error?.message || 'Failed to check for updates'
+    });
+  }
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });

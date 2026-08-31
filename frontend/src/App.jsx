@@ -214,17 +214,22 @@ export default function App() {
   ];
 
   //states for RFC
-const [availableRfcs, setAvailableRfcs] = useState([]);
-const [selectedRfc, setSelectedRfc] = useState('');
-const [rfcSchema, setRfcSchema] = useState(null);
-const [rfcFile, setRfcFile] = useState(null);
-const [rfcPreviewRows, setRfcPreviewRows] = useState([]);
-const [rfcExecuting, setRfcExecuting] = useState(false);
-const [rfcProgress, setRfcProgress] = useState({ current: 0, total: 0, currentRow: '' });
-const [rfcResults, setRfcResults] = useState([]);
-const [rfcError, setRfcError] = useState('');
-const [rfcMsg, setRfcMsg] = useState('');
-const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
+  const [availableRfcs, setAvailableRfcs] = useState([]);
+  const [selectedRfc, setSelectedRfc] = useState('');
+  const [rfcSchema, setRfcSchema] = useState(null);
+  const [rfcFile, setRfcFile] = useState(null);
+  const [rfcPreviewRows, setRfcPreviewRows] = useState([]);
+  const [rfcExecuting, setRfcExecuting] = useState(false);
+  const [rfcProgress, setRfcProgress] = useState({ current: 0, total: 0, currentRow: '' });
+  const [rfcResults, setRfcResults] = useState([]);
+  const [rfcError, setRfcError] = useState('');
+  const [rfcMsg, setRfcMsg] = useState('');
+  const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
+
+  //states for update check:
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [updateError, setUpdateError] = useState('');
 
   function navBtnStyle(active) {
     return {
@@ -332,20 +337,19 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
     setSdkPathError('');
     setSdkPathInfo('');
     try {
-      const res = await fetch('/api/settings/sap-sdk-path');
-      const data = await res.json();
+        const data = await fetchJson('/api/settings/sap-sdk-path');
 
-      setSdkPath(data.formattedEnv);
-      if (data.sapnwrfcHome) {
-        setSdkPath(data.sapnwrfcHome);
-        setSdkPathInfo('SDK path successfully loaded from backend .env environment variable.');
-      } else {
-        setSdkPathError('SAPNWRFC_HOME variable is not defined in the backend .env file.');
+        if (data && data.sapnwrfcHome) {
+          setSdkPath(data.sapnwrfcHome);
+          setSdkPathInfo('SDK path successfully loaded from backend .env environment variable.');
+        } else {
+          setSdkPath('');
+          setSdkPathError('SAPNWRFC_HOME variable is not defined in the backend .env file.');
+        }
+      } catch (err) {
+        console.error(err);
+        setSdkPathError('Failed to load SDK path from backend environment.');
       }
-    } catch (err) {
-      console.error(err);
-      setSdkPathError('Failed to load SDK path from backend environment.');
-    }
   };
 
   async function runSdkDiagnostics() {
@@ -362,6 +366,25 @@ const rfcFileInputRef = useRef(null); // <--- Added to reset the RFC file input
   function updateForm(key, value) {
     setForm((old) => ({ ...old, [key]: value }));
   }
+
+  const checkForUpdates = async () => {
+    setUpdateLoading(true);
+    setUpdateError('');
+    setUpdateInfo(null);
+    try {
+      const data = await fetchJson('/api/settings/check-update');
+      if (data && data.ok) {
+        setUpdateInfo(data);
+      } else {
+        setUpdateError(data?.error || 'Could not verify updates.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUpdateError('Failed to contact backend for update check.');
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
 
   async function loadRealmList() {
     setSapRealmError('');
@@ -1387,6 +1410,44 @@ async function executeRfcBatch() {
               userguide.md
             </a>
           </span>
+        </div>
+        {/* Panel 3: updates check */}
+        <div style={panelStyle}>
+          <h3>Software Updates</h3>
+          <p style={{ marginTop: 0 }}>Check if a newer release of ZSecTools is available on GitHub.</p>
+
+          <button
+            style={{ padding: '8px 12px', cursor: updateLoading ? 'not-allowed' : 'pointer' }}
+            onClick={checkForUpdates}
+            disabled={updateLoading}
+          >
+            {updateLoading ? 'Checking...' : 'Check for updates'}
+          </button>
+
+          {updateError ? (
+            <p style={{ color: 'crimson', marginTop: 10 }}>{updateError}</p>
+          ) : null}
+
+          {updateInfo ? (
+            <div style={{ marginTop: 12 }}>
+              {updateInfo.hasUpdate ? (
+                <div style={{ padding: 10, backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: 4 }}>
+                  <p style={{ margin: 0, fontWeight: 'bold', color: '#b78103' }}>
+                    🚀 A new version is available: v{updateInfo.latestVersion} (Current: v{updateInfo.currentVersion})
+                  </p>
+                  <p style={{ margin: '6px 0 0 0' }}>
+                    <a href={updateInfo.releaseUrl} target="_blank" rel="noreferrer">
+                      View release on GitHub
+                    </a>
+                  </p>
+                </div>
+              ) : (
+                <p style={{ color: 'green', margin: 0 }}>
+                  ✓ You are running the latest version (v{updateInfo.currentVersion}).
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     );
