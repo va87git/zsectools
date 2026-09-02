@@ -3804,24 +3804,33 @@ export async function importMapperRolesFromTsv(rows) {
 export async function loadMapperRoleTcodesFromDb(realm) {
   await ensureMapperTables();
   const agrTcodes = `sap_raw_${realm}_agr_tcodes`;
-  const tcdDescTable = `yr_${realm}_tcodes_description`;
+  const roleStcodeExpl = `yr_${realm}_role_stcode_exploded`;
   if (!(await tableExists(agrTcodes))) throw new Error(`SAP table agr_tcodes not found. Import SAP tables first.`);
+  if (!(await tableExists(roleStcodeExpl))) throw new Error(`Internal SAP table yr_${realm}_role_stcode_exploded not found. Build additional info first.`);
 
   const roles = (await pool.query(`SELECT agr_name FROM map_roles`)).rows;
   if (!roles.length) return { inserted: 0 };
   const agrNames = roles.map(r => r.agr_name);
 
-  const hasDesc = await tableExists(tcdDescTable);
   await pool.query(`DELETE FROM map_role_tcodes WHERE agr_name = ANY($1)`, [agrNames]);
 
-  const query = hasDesc
-    ? `SELECT at.agr_name, at.tcode, COALESCE(d.ttext,'') AS tcode_description
-       FROM "${agrTcodes}" at
-       LEFT JOIN "${tcdDescTable}" d ON d.tcode = at.tcode
-       WHERE at.agr_name = ANY($1) AND at.tcode IS NOT NULL AND at.tcode NOT IN ('','*')`
-    : `SELECT agr_name, tcode, '' AS tcode_description
-       FROM "${agrTcodes}"
-       WHERE agr_name = ANY($1) AND tcode IS NOT NULL AND tcode NOT IN ('','*')`;
+  // NB: alias esplicito "AS tcode" — la riga risultante viene poi inserita
+  // usando r.tcode, quindi il nome colonna deve combaciare.
+  const query = `
+    SELECT at.agr_name, at.tcodetotal AS tcode, COALESCE(d.ttext,'') AS tcode_description
+    FROM "${roleStcodeExpl}" at
+    LEFT JOIN "yr_${realm}_tcodes_description" d ON d.tcode = at.tcodetotal
+    WHERE at.agr_name = ANY($1) AND at.tcodetotal IS NOT NULL AND at.tcodetotal NOT IN ('','*')
+    GROUP BY at.agr_name, at.tcodetotal, d.ttext
+
+    UNION
+
+    SELECT agrs.agr_name, at2.tcodetotal AS tcode, COALESCE(d2.ttext,'') AS tcode_description
+    FROM "sap_raw_${realm}_agr_agrs" agrs
+    INNER JOIN "${roleStcodeExpl}" at2 ON agrs.child_agr = at2.agr_name
+    LEFT JOIN "yr_${realm}_tcodes_description" d2 ON d2.tcode = at2.tcodetotal
+    WHERE agrs.agr_name = ANY($1) AND at2.tcodetotal IS NOT NULL AND at2.tcodetotal NOT IN ('','*')
+    GROUP BY agrs.agr_name, at2.tcodetotal, d2.ttext`;
 
   const res = await pool.query(query, [agrNames]);
   let inserted = 0;
