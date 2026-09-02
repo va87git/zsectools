@@ -3321,7 +3321,7 @@ async function executeRfcBatch() {
               <button style={btnStyle('#555')} onClick={() => mapLoadResults(0)}>Refresh</button>
               <button style={btnStyle('#2e7d32')} onClick={mapExportResults} disabled={!mapResultsTotal}>Export Results</button>
               <button style={btnStyle('#1a73e8')} onClick={mapRun} disabled={mapRunLoading}>
-                {mapRunLoading ? 'Running...' : 'Execute mapping'}
+                {mapRunLoading ? 'Running...' : 'Run mapping'}
               </button>
             </div>
           </div>
@@ -3371,7 +3371,7 @@ async function executeRfcBatch() {
             </>
           ) : (
             <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-              No results yet. Add elements, load role tcodes, then click Execute mapping.
+              No results yet. Add elements, load role tcodes, then click Run mapping.
             </p>
           )}
         </div>
