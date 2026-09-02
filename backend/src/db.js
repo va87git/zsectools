@@ -3765,32 +3765,35 @@ export async function getMapperRoles(limit = 200, offset = 0) {
 
 // Equivalent of "Import Mapping Roles" (Excel): AGR_NAME / TEXT / TCODETOTAL / TTEXT
 // (typically "simulated" roles not yet present in SAP)
+// Expected fields: agr_name, agr_description, role_type, tcode, tcode_description
+// (same fields from export "Export Mapping Roles" — round-trip).
 export async function importMapperRolesFromTsv(rows) {
   await ensureMapperTables();
   let inserted = 0;
-  const rolesSeen = new Map();
+  const rolesSeen = new Map(); // agr_name -> { agr_description, role_type }
   for (const row of rows) {
     const agr_name = String(row.agr_name || row.AGR_NAME || '').trim();
     if (!agr_name) continue;
-    const text = String(row.text || row.TEXT || '').trim();
-    rolesSeen.set(agr_name, text);
+    const agr_description = String(row.agr_description || row.AGR_DESCRIPTION || row.text || row.TEXT || '').trim();
+    const role_type = String(row.role_type || row.ROLE_TYPE || 'SIMULAZ').trim() || 'SIMULAZ';
+    rolesSeen.set(agr_name, { agr_description, role_type });
 
-    const tcode = String(row.tcodetotal || row.TCODETOTAL || row.tcode || row.TCODE || '').trim();
+    const tcode = String(row.tcode || row.TCODE || row.tcodetotal || row.TCODETOTAL || '').trim();
     if (tcode) {
-      const ttext = String(row.ttext || row.TTEXT || row.tcode_description || '').trim();
+      const tcode_description = String(row.tcode_description || row.TCODE_DESCRIPTION || row.ttext || row.TTEXT || '').trim();
       await pool.query(
         `INSERT INTO map_role_tcodes (agr_name,tcode,tcode_description) VALUES ($1,$2,$3)
          ON CONFLICT (agr_name,tcode) DO UPDATE SET tcode_description=EXCLUDED.tcode_description`,
-        [agr_name, tcode, ttext]
+        [agr_name, tcode, tcode_description]
       );
     }
     inserted++;
   }
-  for (const [agr_name, text] of rolesSeen) {
+  for (const [agr_name, { agr_description, role_type }] of rolesSeen) {
     await pool.query(
-      `INSERT INTO map_roles (agr_name, agr_description, role_type) VALUES ($1,$2,'SIMULAZ')
-       ON CONFLICT (agr_name) DO UPDATE SET agr_description=EXCLUDED.agr_description`,
-      [agr_name, text]
+      `INSERT INTO map_roles (agr_name, agr_description, role_type) VALUES ($1,$2,$3)
+       ON CONFLICT (agr_name) DO UPDATE SET agr_description=EXCLUDED.agr_description, role_type=EXCLUDED.role_type`,
+      [agr_name, agr_description, role_type]
     );
   }
   return { inserted };
@@ -3833,7 +3836,7 @@ export async function loadMapperRoleTcodesFromDb(realm) {
   return { inserted };
 }
 
-// drill-down tcode for a role ruolo
+// drill-down tcode for a role
 export async function getMapperRoleTcodes(agrName) {
   if (!(await tableExists('map_role_tcodes'))) return { rows: [] };
   const res = await pool.query(

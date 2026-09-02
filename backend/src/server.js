@@ -1432,6 +1432,9 @@ app.get('/api/mapper/elements', async (req, res) => {
     const offset = Number(req.query?.offset || 0);
     const result = await getMapperElements(limit, offset);
     if (format === 'csv') {
+      // Export combined: 1 line for each element×tcode (join on map_element_tcodes),
+      // all "element_to_map" tables are feeded by "Import Element to Map".
+      // "Elements to map" without tcodes are shown anyway (LEFT JOIN).
       const client = await pool.connect();
       try {
         res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
@@ -1441,7 +1444,11 @@ app.get('/api/mapper/elements', async (req, res) => {
         let headerWritten = false;
         while (true) {
           const batch = await client.query(
-            `SELECT * FROM map_elements ORDER BY elementid LIMIT $1 OFFSET $2`,
+            `SELECT e.elementid, e.element_description, t.tcode, t.tcode_description, t.n_exec
+             FROM map_elements e
+             LEFT JOIN map_element_tcodes t ON t.elementid = e.elementid
+             ORDER BY e.elementid, t.tcode
+             LIMIT $1 OFFSET $2`,
             [BATCH, batchOffset]
           );
           if (batch.rows.length === 0) break;
@@ -1514,6 +1521,9 @@ app.get('/api/mapper/roles', async (req, res) => {
     const offset = Number(req.query?.offset || 0);
     const result = await getMapperRoles(limit, offset);
     if (format === 'csv') {
+      // Export combined: 1 line for each role×tcode (join on map_role_tcodes),
+      // all "mapping" tables are feeded by "Import Mapping Roles".
+      // Roles without tcodes are shown anyway (LEFT JOIN).
       const client = await pool.connect();
       try {
         res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
@@ -1523,7 +1533,11 @@ app.get('/api/mapper/roles', async (req, res) => {
         let headerWritten = false;
         while (true) {
           const batch = await client.query(
-            `SELECT * FROM map_roles ORDER BY agr_name LIMIT $1 OFFSET $2`,
+            `SELECT r.agr_name, r.agr_description, r.role_type, t.tcode, t.tcode_description
+             FROM map_roles r
+             LEFT JOIN map_role_tcodes t ON t.agr_name = r.agr_name
+             ORDER BY r.agr_name, t.tcode
+             LIMIT $1 OFFSET $2`,
             [BATCH, batchOffset]
           );
           if (batch.rows.length === 0) break;

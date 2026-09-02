@@ -2850,6 +2850,7 @@ async function executeRfcBatch() {
   }
 
   async function mapShowElementDetail(elementid) {
+    setMapRoleDetailFor('');   // closing view "role":drill-down show last selection
     setMapElementDetailFor(elementid);
     try {
       const data = await fetchJson(`/api/mapper/elements/${encodeURIComponent(elementid)}/tcodes`);
@@ -2944,6 +2945,7 @@ async function executeRfcBatch() {
   }
 
   async function mapShowRoleDetail(agrName) {
+    setMapElementDetailFor('');   // closing view "element":drill-down show last selection
     setMapRoleDetailFor(agrName);
     try {
       const data = await fetchJson(`/api/mapper/roles/${encodeURIComponent(agrName)}/tcodes`);
@@ -3225,7 +3227,6 @@ async function executeRfcBatch() {
               </div>
             )}
           </div>
-
           {/* Mapping Item panel */}
           <div style={{ ...panelStyle, flex: 1 }}>
             <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Mapping Item</h2>
@@ -3273,8 +3274,7 @@ async function executeRfcBatch() {
             )}
           </div>
         </div>
-
-        {/* Transactions drill-down (equivalente di dgMapTcodes) */}
+        {/* Transactions drill-down */}
         {(mapElementDetailFor || mapRoleDetailFor) && (
           <div style={panelStyle}>
             <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>
