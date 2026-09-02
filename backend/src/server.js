@@ -68,7 +68,10 @@ import {
   removeMapperRoles,
   clearMapperData,
   runMapperAnalysis,
-  getMapperResults
+  getMapperResults,
+  buildCoverageUserTcodes,
+  getCoverageUserTcodes,
+  getCoverageRoleTcodes
 } from './db.js';
 import {
   fetchUserStatistics,
@@ -1251,40 +1254,58 @@ app.get('/api/coverage/users', async (req, res) => {
     const limit  = Number(req.query?.limit  || 200);
     const offset = Number(req.query?.offset || 0);
     const result = await getCoverageUsers(limit, offset);
-   	//csv export:
-	if (format === 'csv') {
-         const client = await pool.connect();
-         try {
-           res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-           res.setHeader('Content-Disposition', 'attachment; filename="cov_users.csv"');
-           const BATCH = 500;
-           let batchOffset = 0;
-           let headerWritten = false;
-           while (true) {
-             const batch = await client.query(
-               `SELECT * FROM cov_users ORDER BY userid LIMIT $1 OFFSET $2`,
-               [BATCH, batchOffset]
-             );
-             if (batch.rows.length === 0) break;
-               // Removing id from batch
-               const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
-                 if (!headerWritten) {
-                   res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
-                   headerWritten = true;
-                 }
-                 for (const row of cleanRows) {
-                   res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
-                 }
-                 if (batch.rows.length < BATCH) break;
-                 batchOffset += BATCH;
-               }
-               res.end();
-         } finally {
-               client.release();
-         }
-         return;
-       }
-	//end export csv
+    // csv export: combined with cov_users_tcodes (join), like mapper function
+    if (format === 'csv') {
+      const client = await pool.connect();
+      try {
+        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="cov_users.csv"');
+        const BATCH = 500;
+        let batchOffset = 0;
+        let headerWritten = false;
+        while (true) {
+          const batch = await client.query(
+            `SELECT u.userid, u.firstname, u.lastname, t.tcode, t.tcode_description, t.n_exec
+             FROM cov_users u
+             LEFT JOIN cov_users_tcodes t ON t.userid = u.userid
+             ORDER BY u.userid, t.tcode
+             LIMIT $1 OFFSET $2`,
+            [BATCH, batchOffset]
+          );
+          if (batch.rows.length === 0) break;
+          if (!headerWritten) {
+            res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+            headerWritten = true;
+          }
+          for (const row of batch.rows) {
+            res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+          }
+          if (batch.rows.length < BATCH) break;
+          batchOffset += BATCH;
+        }
+        res.end();
+      } finally {
+        client.release();
+      }
+      return;
+    }
+    // end export csv
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/coverage/build-user-tcodes', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    const result = await buildCoverageUserTcodes(realm);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/users/:userId/tcodes', async (req, res) => {
+  try {
+    const result = await getCoverageUserTcodes(req.params.userId);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -1330,39 +1351,49 @@ app.get('/api/coverage/roles', async (req, res) => {
     const limit  = Number(req.query?.limit  || 200);
     const offset = Number(req.query?.offset || 0);
     const result = await getCoverageRoles(limit, offset);
-    //csv export:
-	if (format === 'csv') {
-          const client = await pool.connect();
-          try {
-            res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-            res.setHeader('Content-Disposition', 'attachment; filename="cov_roles.csv"');
-            const BATCH = 500;
-            let batchOffset = 0;
-            let headerWritten = false;
-            while (true) {
-              const batch = await client.query(
-                `SELECT * FROM cov_roles ORDER BY userid, agr_name LIMIT $1 OFFSET $2`,
-                [BATCH, batchOffset]
-              );
-              if (batch.rows.length === 0) break;
-                const cleanRows = batch.rows.map(({ id, ...rest }) => rest);
-                  if (!headerWritten) {
-                    res.write(Object.keys(cleanRows[0]).join('\t') + '\n');
-                    headerWritten = true;
-                  }
-                  for (const row of cleanRows) {
-                    res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
-                  }
-                  if (batch.rows.length < BATCH) break;
-                  batchOffset += BATCH;
-                }
-                res.end();
-          } finally {
-                client.release();
+    // csv export: combined with cov_roles_tcodes (join), like mapper function
+    if (format === 'csv') {
+      const client = await pool.connect();
+      try {
+        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="cov_roles.csv"');
+        const BATCH = 500;
+        let batchOffset = 0;
+        let headerWritten = false;
+        while (true) {
+          const batch = await client.query(
+            `SELECT r.userid, r.agr_name, r.agr_description, t.tcode, t.tcode_description
+             FROM cov_roles r
+             LEFT JOIN cov_roles_tcodes t ON t.agr_name = r.agr_name
+             ORDER BY r.userid, r.agr_name, t.tcode
+             LIMIT $1 OFFSET $2`,
+            [BATCH, batchOffset]
+          );
+          if (batch.rows.length === 0) break;
+          if (!headerWritten) {
+            res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+            headerWritten = true;
           }
-          return;
+          for (const row of batch.rows) {
+            res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+          }
+          if (batch.rows.length < BATCH) break;
+          batchOffset += BATCH;
         }
-	//end export csv
+        res.end();
+      } finally {
+        client.release();
+      }
+      return;
+    }
+    // end export csv
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/coverage/roles/:agrName/tcodes', async (req, res) => {
+  try {
+    const result = await getCoverageRoleTcodes(req.params.agrName);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

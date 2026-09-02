@@ -160,6 +160,8 @@ export default function App() {
   const [sodDeleteLoading, setSodDeleteLoading] = useState(false);
   const [sodDeleteMsg, setSodDeleteMsg] = useState('');
   const [sodDeleteErr, setSodDeleteErr] = useState('');
+  const sodElementsFileInputRef = useRef(null);
+  const [sodImportElementsLoading, setSodImportElementsLoading] = useState(false);
 
   // Coverage section state
   const [covUserPattern, setCovUserPattern] = useState('');
@@ -168,11 +170,18 @@ export default function App() {
   const [covUserErr, setCovUserErr] = useState('');
   const [covUsers, setCovUsers] = useState([]);
   const [covUsersTotal, setCovUsersTotal] = useState(0);
+  const [covUserDetail, setCovUserDetail] = useState([]);
+  const [covUserDetailFor, setCovUserDetailFor] = useState('');
+  const [covStatLoading, setCovStatLoading] = useState(false);
+
   const [covRoles, setCovRoles] = useState([]);
   const [covRolesTotal, setCovRolesTotal] = useState(0);
   const [covRolesLoading, setCovRolesLoading] = useState(false);
   const [covRolesMsg, setCovRolesMsg] = useState('');
   const [covRolesErr, setCovRolesErr] = useState('');
+  const [covRoleDetail, setCovRoleDetail] = useState([]);
+  const [covRoleDetailFor, setCovRoleDetailFor] = useState('');
+
   const [covRunLoading, setCovRunLoading] = useState(false);
   const [covRunMsg, setCovRunMsg] = useState('');
   const [covRunErr, setCovRunErr] = useState('');
@@ -181,8 +190,6 @@ export default function App() {
   const [covResultsPage, setCovResultsPage] = useState(0);
   const covUsersFileRef = useRef(null);
   const covRolesFileRef = useRef(null);
-  const sodElementsFileInputRef = useRef(null);
-  const [sodImportElementsLoading, setSodImportElementsLoading] = useState(false);
 
   // Reports section state
   const [selectedReport, setSelectedReport] = useState('');
@@ -2625,7 +2632,9 @@ async function executeRfcBatch() {
   async function covClearUsers() {
     if (!window.confirm('Clear all coverage users?')) return;
     await fetchJson('/api/coverage/clear', { method: 'POST', body: JSON.stringify({ target: 'users' }) });
-    setCovUsers([]); setCovUsersTotal(0); setCovUserMsg('Users cleared.');
+    setCovUsers([]); setCovUsersTotal(0);
+    setCovUserDetail([]); setCovUserDetailFor('');
+    setCovUserMsg('Users cleared.');
   }
 
   function covHandleUsersFile(e) {
@@ -2642,7 +2651,7 @@ async function executeRfcBatch() {
       setCovUserLoading(true);
       try {
         const r = await fetchJson('/api/coverage/import-users-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
-        setCovUserMsg(`Imported ${r.inserted} user(s) from file`);
+        setCovUserMsg(`Imported ${r.inserted} row(s) from file`);
         covLoadUsers();
       } catch (ex) { setCovUserErr(ex.message); }
       finally { setCovUserLoading(false); if (covUsersFileRef.current) covUsersFileRef.current.value = ''; }
@@ -2651,32 +2660,41 @@ async function executeRfcBatch() {
   }
 
   async function covExportUsers() {
-      if (!covUsers || covUsers.length === 0) {
-        alert('No data to export.');
-        return;
-      }
-      try {
-        const url = `${API_BASE}/api/coverage/users?format=csv`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = `cov_users.csv`;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
-      } catch (err) {
-        console.error('Export failed', err);
-        alert('Export failed: ' + err.message);
-      }
+    if (!covUsers || covUsers.length === 0) { alert('No data to export.'); return; }
+    try {
+      const url = `${API_BASE}/api/coverage/users?format=csv`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl; a.download = `cov_users.csv`; a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) { console.error('Export failed', err); alert('Export failed: ' + err.message); }
+  }
+
+  async function covBuildUserStats() {
+    setCovUserErr(''); setCovUserMsg('');
+    if (!selectedRealm) { setCovUserErr('Select an active SAP realm first'); return; }
+    setCovStatLoading(true);
+    try {
+      const r = await fetchJson('/api/coverage/build-user-tcodes', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim() }) });
+      setCovUserMsg(`Loaded ${r.inserted} transaction usage row(s)`);
+    } catch (e) { setCovUserErr(e.message); }
+    finally { setCovStatLoading(false); }
+  }
+
+  async function covShowUserDetail(userid) {
+    setCovRoleDetailFor('');   // mutually exclusive with roles view
+    setCovUserDetailFor(userid);
+    try {
+      const data = await fetchJson(`/api/coverage/users/${encodeURIComponent(userid)}/tcodes`);
+      setCovUserDetail(data.rows || []);
+    } catch (e) { console.error(e); }
   }
 
   async function covExportRoles() {
-    if (!covRoles || covRoles.length === 0) {
-      alert('No data to export.');
-      return;
-    }
+    if (!covRoles || covRoles.length === 0) { alert('No data to export.'); return; }
     try {
       const url = `${API_BASE}/api/coverage/roles?format=csv`;
       const response = await fetch(url);
@@ -2684,14 +2702,9 @@ async function executeRfcBatch() {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `cov_roles.csv`;
-      a.click();
+      a.href = objectUrl; a.download = `cov_roles.csv`; a.click();
       URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      console.error('Export failed', err);
-      alert('Export failed: ' + err.message);
-    }
+    } catch (err) { console.error('Export failed', err); alert('Export failed: ' + err.message); }
   }
 
   function covHandleRolesFile(e) {
@@ -2708,7 +2721,7 @@ async function executeRfcBatch() {
       setCovRolesLoading(true);
       try {
         const r = await fetchJson('/api/coverage/import-roles-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
-        setCovRolesMsg(`Imported ${r.inserted} role(s) from file`);
+        setCovRolesMsg(`Imported ${r.inserted} row(s) from file`);
         covLoadRoles();
       } catch (ex) { setCovRolesErr(ex.message); }
       finally { setCovRolesLoading(false); if (covRolesFileRef.current) covRolesFileRef.current.value = ''; }
@@ -2730,7 +2743,18 @@ async function executeRfcBatch() {
   async function covClearRoles() {
     if (!window.confirm('Clear all coverage roles?')) return;
     await fetchJson('/api/coverage/clear', { method: 'POST', body: JSON.stringify({ target: 'roles' }) });
-    setCovRoles([]); setCovRolesTotal(0); setCovRolesMsg('Roles cleared.');
+    setCovRoles([]); setCovRolesTotal(0);
+    setCovRoleDetail([]); setCovRoleDetailFor('');
+    setCovRolesMsg('Roles cleared.');
+  }
+
+  async function covShowRoleDetail(agrName) {
+    setCovUserDetailFor('');   // mutually exclusive with user view
+    setCovRoleDetailFor(agrName);
+    try {
+      const data = await fetchJson(`/api/coverage/roles/${encodeURIComponent(agrName)}/tcodes`);
+      setCovRoleDetail(data.rows || []);
+    } catch (e) { console.error(e); }
   }
 
   async function covRun() {
@@ -2996,7 +3020,6 @@ async function executeRfcBatch() {
     const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
     const inputStyle = { padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, width: '100%', boxSizing: 'border-box' };
     const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
-    const smallBtn = (bg) => ({ ...btnStyle(bg), padding: '4px 10px', fontSize: 12 });
 
     return (
       <div style={{ maxWidth: 1100 }}>
@@ -3015,6 +3038,9 @@ async function executeRfcBatch() {
             <button style={btnStyle('#2e7d32')} onClick={covAddUser} disabled={covUserLoading}>
               {covUserLoading ? 'Adding...' : 'Add user'}
             </button>
+            <button style={btnStyle('#1a73e8')} onClick={covBuildUserStats} disabled={covStatLoading}>
+              {covStatLoading ? 'Loading...' : 'Get Users Statistic'}
+            </button>
             <div style={{
               marginLeft: 'auto',
               display: 'grid',
@@ -3023,13 +3049,11 @@ async function executeRfcBatch() {
               alignItems: 'center',
               justifyItems: 'end'
             }}>
-              {/* Line 1 */}
               <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
               <input ref={covUsersFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleUsersFile} />
               <button style={btnStyle('#555')} onClick={() => covUsersFileRef.current?.click()}>Import users</button>
               <button style={btnStyle('#c62828')} onClick={covClearUsers}>Clear</button>
 
-              {/* Line2 2: Export under Import users (column 2) */}
               <span />
               <button style={btnStyle('#1976d2')} onClick={covExportUsers} disabled={!covUsers.length}>
                 Export users
@@ -3047,7 +3071,8 @@ async function executeRfcBatch() {
                   {['User ID', 'First Name', 'Last Name'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
                 </tr></thead>
                 <tbody>{covUsers.map((u, i) => (
-                  <tr key={u.userid} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                  <tr key={u.userid} style={{ background: covUserDetailFor === u.userid ? '#e3f2fd' : (i % 2 === 0 ? 'white' : '#fafafa'), cursor: 'pointer' }}
+                    onClick={() => covShowUserDetail(u.userid)}>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.userid}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.firstname}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{u.lastname}</td>
@@ -3073,20 +3098,18 @@ async function executeRfcBatch() {
               alignItems: 'center',
               justifyItems: 'end'
             }}>
-              {/* Line1 1 */}
               <span style={{ color: '#555', fontSize: 13 }}>Upload CSV/TSV File</span>
               <input ref={covRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={covHandleRolesFile} />
               <button style={btnStyle('#555')} onClick={() => covRolesFileRef.current?.click()}>Import roles</button>
               <button style={btnStyle('#c62828')} onClick={covClearRoles}>Clear</button>
 
-              {/* Line2 2: Export under Import roles (column 2) */}
               <span />
               <button style={btnStyle('#1976d2')} onClick={covExportRoles} disabled={!covRoles.length}>
                 Export roles
               </button>
               <span />
             </div>
-            </div>
+          </div>
           {covRolesMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{covRolesMsg}</p>}
           {covRolesErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{covRolesErr}</p>}
           {covRoles.length > 0 && (
@@ -3097,7 +3120,8 @@ async function executeRfcBatch() {
                   {['User ID', 'Role', 'Description'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
                 </tr></thead>
                 <tbody>{covRoles.map((r, i) => (
-                  <tr key={`${r.userid}-${r.agr_name}`} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                  <tr key={`${r.userid}-${r.agr_name}`} style={{ background: covRoleDetailFor === r.agr_name ? '#e3f2fd' : (i % 2 === 0 ? 'white' : '#fafafa'), cursor: 'pointer' }}
+                    onClick={() => covShowRoleDetail(r.agr_name)}>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.userid}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_name}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_description}</td>
@@ -3107,6 +3131,32 @@ async function executeRfcBatch() {
             </div>
           )}
         </div>
+
+        {/* Transactions drill-down */}
+        {(covUserDetailFor || covRoleDetailFor) && (
+          <div style={panelStyle}>
+            <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>
+              Transactions {covUserDetailFor ? `— user ${covUserDetailFor}` : `— role ${covRoleDetailFor}`}
+            </h2>
+            <div style={{ overflowX: 'auto', maxHeight: 260, overflowY: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: '#f5f5f5' }}>
+                  {(covUserDetailFor ? ['Tcode', 'Description', 'N. Exec'] : ['Tcode', 'Description']).map(h =>
+                    <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {(covUserDetailFor ? covUserDetail : covRoleDetail).map((row, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.tcode}</td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.tcode_description}</td>
+                      {covUserDetailFor && <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.n_exec}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Run & Results panel */}
         <div style={panelStyle}>

@@ -22,7 +22,7 @@
 
 ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), and perform SOD risk analysis against a configurable rule matrix.
 
-The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, **Coverage**, and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
+The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, **Coverage**, **Mapper** and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
 
 ## SAP Realms
 
@@ -110,7 +110,7 @@ The **Coverage Analysis** section allows you to evaluate role assignments agains
 
 ### Overview & Core Logic
 
-This analysis is specifically tailored for business users. Therefore, **only transactions explicitly present in role menus are evaluated**; any access granted via ranges or wildcards in the `S_TCODE` authorization object is intentionally excluded.
+This analysis is specifically tailored for business users. Therefore, **best works with only transactions explicitly present in role menus**; any access granted via ranges or wildcards in the `S_TCODE` authorization object is intentionally included, but it is not the correct use of this tool.
 
 The analysis follows this workflow:
 1. **Define Users**: Specify the targeted users to analyze.
@@ -144,8 +144,9 @@ Define the scope of users you wish to include in the coverage check.
 * **User ID Input**: Input a specific User ID or use SQL wildcards (`%` and `_`) to select multiple users (e.g., `ZTEST%`).
 * **Add user**: Executes a search/filter and adds matching users to the analysis queue.
 * **Upload CSV/TSV File**: Select a local CSV, TSV, or TXT file containing user data to load.
-* **Import users**: Uploads and imports the selected user file into the temporary analysis buffer (expected fields: userid,firstName,lastName).
+* **Import users**: Uploads and imports the selected user file into the temporary analysis buffer, with tcode relationship. Append mode.
 * **Export users**: Downloads a CSV file containing the currently loaded list of users to analyze.
+* **Get Users Statistics**: Fills user-tcode table with statistic data.
 * **Clear**: Clears all loaded users from the current workspace.
 
 ---
@@ -156,7 +157,7 @@ Manage the roles assigned to the targeted users for comparison.
 
 * **Get as-is roles from DB**: Automatically populates existing role assignments for the targeted users directly from the DB.
 * **Upload CSV/TSV File**: Select a local file containing user-to-role mappings.
-* **Import roles**: Uploads and imports the role assignments file into the temporary buffer (expected fields: userid,agr_name,agr_description).
+* **Import roles**: Uploads and imports the role assignments file into the temporary buffer, with tcode relationship. Append mode.
 * **Export roles**: Downloads a CSV file containing all currently active role assignments in the buffer.
 * **Clear**: Clears all loaded role assignments from the workspace.
 
