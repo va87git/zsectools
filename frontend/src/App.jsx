@@ -2805,6 +2805,13 @@ async function executeRfcBatch() {
     setMapElementMsg('Elements cleared.');
   }
 
+  async function mapClearResults() {
+    if (!window.confirm('Clear mapper results?')) return;
+    await fetchJson('/api/mapper/clear', { method: 'POST', body: JSON.stringify({ target: 'results' }) });
+    setMapResults([]); setMapResultsTotal(0); setMapResultsPage(0);
+    setMapRunMsg(`Results cleared`);
+  }
+
   function mapHandleElementsFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
@@ -3200,7 +3207,7 @@ async function executeRfcBatch() {
                 {mapStatLoading ? 'Loading...' : 'Get Users Statistic'}
               </button>
               <button style={btnStyle('#e65100')} onClick={mapRemoveSelectedElements} disabled={!mapElementsSelected.size}>Remove Users</button>
-              <button style={btnStyle('#c62828')} onClick={mapClearElements}>Clear Data</button>
+              <button style={btnStyle('#c62828')} onClick={mapClearElements}>Clear ElementID</button>
             </div>
             {mapElementMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{mapElementMsg}</p>}
             {mapElementErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{mapElementErr}</p>}
@@ -3246,6 +3253,7 @@ async function executeRfcBatch() {
               <button style={btnStyle('#1976d2')} onClick={mapExportRoles} disabled={!mapRoles.length}>Export Mapping Roles</button>
               <button style={btnStyle('#1a73e8')} onClick={mapLoadRoleTcodesFromDb} disabled={mapRoleLoading}>Get tcodes from DB</button>
               <button style={btnStyle('#e65100')} onClick={mapRemoveSelectedRoles} disabled={!mapRolesSelected.size}>Remove item</button>
+              <button style={btnStyle('#c62828')} onClick={mapClearRoles}>Clear Roles</button>
             </div>
             {mapRoleMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{mapRoleMsg}</p>}
             {mapRoleErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{mapRoleErr}</p>}
@@ -3309,6 +3317,7 @@ async function executeRfcBatch() {
                 <input type="checkbox" checked={mapCalculateExtra} onChange={e => setMapCalculateExtra(e.target.checked)} />
                 Calculate Extra
               </label>
+              <button style={btnStyle('#c62828')} onClick={mapClearResults}>Clear Results</button>
               <button style={btnStyle('#555')} onClick={() => mapLoadResults(0)}>Refresh</button>
               <button style={btnStyle('#2e7d32')} onClick={mapExportResults} disabled={!mapResultsTotal}>Export Results</button>
               <button style={btnStyle('#1a73e8')} onClick={mapRun} disabled={mapRunLoading}>
