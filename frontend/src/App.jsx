@@ -231,6 +231,39 @@ export default function App() {
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState('');
 
+  // Mapper section state
+  const [mapElementPattern, setMapElementPattern] = useState('');
+  const [mapElementLoading, setMapElementLoading] = useState(false);
+  const [mapElementMsg, setMapElementMsg] = useState('');
+  const [mapElementErr, setMapElementErr] = useState('');
+  const [mapElements, setMapElements] = useState([]);
+  const [mapElementsTotal, setMapElementsTotal] = useState(0);
+  const [mapElementsSelected, setMapElementsSelected] = useState(new Set());
+  const [mapElementDetail, setMapElementDetail] = useState([]);
+  const [mapElementDetailFor, setMapElementDetailFor] = useState('');
+  const [mapStatLoading, setMapStatLoading] = useState(false);
+
+  const [mapRolePattern, setMapRolePattern] = useState('');
+  const [mapRoleLoading, setMapRoleLoading] = useState(false);
+  const [mapRoleMsg, setMapRoleMsg] = useState('');
+  const [mapRoleErr, setMapRoleErr] = useState('');
+  const [mapRoles, setMapRoles] = useState([]);
+  const [mapRolesTotal, setMapRolesTotal] = useState(0);
+  const [mapRolesSelected, setMapRolesSelected] = useState(new Set());
+  const [mapRoleDetail, setMapRoleDetail] = useState([]);
+  const [mapRoleDetailFor, setMapRoleDetailFor] = useState('');
+
+  const [mapCalculateExtra, setMapCalculateExtra] = useState(true);
+  const [mapRunLoading, setMapRunLoading] = useState(false);
+  const [mapRunMsg, setMapRunMsg] = useState('');
+  const [mapRunErr, setMapRunErr] = useState('');
+  const [mapResults, setMapResults] = useState([]);
+  const [mapResultsTotal, setMapResultsTotal] = useState(0);
+  const [mapResultsPage, setMapResultsPage] = useState(0);
+
+  const mapElementsFileRef = useRef(null);
+  const mapRolesFileRef = useRef(null);
+
   function navBtnStyle(active) {
     return {
       padding: sidebarCollapsed ? '8px 0' : '8px 12px',
@@ -312,6 +345,11 @@ export default function App() {
     }
     else if (section === 'sap-realms') {
       loadRealmList();
+    }
+    else if (section === 'mapper') {
+      mapLoadElements();
+      mapLoadRoles();
+      mapLoadResults(0);
     }
   }, [section]);
 
@@ -2720,6 +2758,239 @@ async function executeRfcBatch() {
     URL.revokeObjectURL(url);
   }
 
+  // ── MAPPER FUNCTIONS ────────────────────────────────────────────────────────
+
+  async function mapLoadElements() {
+    try {
+      const data = await fetchJson(`/api/mapper/elements?limit=200&offset=0`);
+      setMapElements(data.rows || []);
+      setMapElementsTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function mapLoadRoles() {
+    try {
+      const data = await fetchJson(`/api/mapper/roles?limit=200&offset=0`);
+      setMapRoles(data.rows || []);
+      setMapRolesTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function mapLoadResults(page = 0) {
+    setMapResultsPage(page);
+    try {
+      const data = await fetchJson(`/api/mapper/results?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+      setMapResults(data.rows || []);
+      setMapResultsTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  async function mapAddElement() {
+    setMapElementErr(''); setMapElementMsg('');
+    if (!mapElementPattern.trim()) { setMapElementErr('Enter an element pattern'); return; }
+    setMapElementLoading(true);
+    try {
+      const r = await fetchJson('/api/mapper/add-element', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim(), pattern: mapElementPattern.trim() }) });
+      setMapElementMsg(`Added ${r.added} element(s)`);
+      mapLoadElements();
+    } catch (e) { setMapElementErr(e.message); }
+    finally { setMapElementLoading(false); }
+  }
+
+  async function mapClearElements() {
+    if (!window.confirm('Clear all elements to map?')) return;
+    await fetchJson('/api/mapper/clear', { method: 'POST', body: JSON.stringify({ target: 'elements' }) });
+    setMapElements([]); setMapElementsTotal(0); setMapElementsSelected(new Set());
+    setMapElementDetail([]); setMapElementDetailFor('');
+    setMapElementMsg('Elements cleared.');
+  }
+
+  async function mapClearResults() {
+    if (!window.confirm('Clear mapper results?')) return;
+    await fetchJson('/api/mapper/clear', { method: 'POST', body: JSON.stringify({ target: 'results' }) });
+    setMapResults([]); setMapResultsTotal(0); setMapResultsPage(0);
+    setMapRunMsg(`Results cleared`);
+  }
+
+  function mapHandleElementsFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) return;
+      const headers = lines[0].split('\t').map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(l => {
+        const vals = l.split('\t');
+        return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+      });
+      setMapElementLoading(true);
+      try {
+        const r = await fetchJson('/api/mapper/elements/import-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
+        setMapElementMsg(`Imported ${r.inserted} row(s) from file`);
+        mapLoadElements();
+      } catch (ex) { setMapElementErr(ex.message); }
+      finally { setMapElementLoading(false); if (mapElementsFileRef.current) mapElementsFileRef.current.value = ''; }
+    };
+    reader.readAsText(file);
+  }
+
+  async function mapExportElements() {
+    if (!mapElements.length) { alert('No data to export.'); return; }
+    try {
+      const url = `${API_BASE}/api/mapper/elements?format=csv`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl; a.download = `map_elements.csv`; a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) { console.error('Export failed', err); alert('Export failed: ' + err.message); }
+  }
+
+  async function mapRemoveSelectedElements() {
+    if (!mapElementsSelected.size) { alert('Select at least one element to remove'); return; }
+    await fetchJson('/api/mapper/elements/remove', { method: 'POST', body: JSON.stringify({ elementIds: Array.from(mapElementsSelected) }) });
+    setMapElementsSelected(new Set());
+    setMapElementDetail([]); setMapElementDetailFor('');
+    mapLoadElements();
+  }
+
+  async function mapShowElementDetail(elementid) {
+    setMapRoleDetailFor('');   // closing view "role":drill-down show last selection
+    setMapElementDetailFor(elementid);
+    try {
+      const data = await fetchJson(`/api/mapper/elements/${encodeURIComponent(elementid)}/tcodes`);
+      setMapElementDetail(data.rows || []);
+    } catch (e) { console.error(e); }
+  }
+
+  async function mapBuildElementStats() {
+    setMapElementErr(''); setMapElementMsg('');
+    if (!selectedRealm) { setMapElementErr('Select an active SAP realm first'); return; }
+    setMapStatLoading(true);
+    try {
+      const r = await fetchJson('/api/mapper/build-element-tcodes', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim() }) });
+      setMapElementMsg(`Loaded ${r.inserted} transaction usage row(s)`);
+    } catch (e) { setMapElementErr(e.message); }
+    finally { setMapStatLoading(false); }
+  }
+
+  async function mapAddRole() {
+    setMapRoleErr(''); setMapRoleMsg('');
+    if (!mapRolePattern.trim()) { setMapRoleErr('Enter a role pattern'); return; }
+    setMapRoleLoading(true);
+    try {
+      const r = await fetchJson('/api/mapper/add-role', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim(), pattern: mapRolePattern.trim() }) });
+      setMapRoleMsg(`Added ${r.added} role(s)`);
+      mapLoadRoles();
+    } catch (e) { setMapRoleErr(e.message); }
+    finally { setMapRoleLoading(false); }
+  }
+
+  async function mapClearRoles() {
+    if (!window.confirm('Clear all mapping roles?')) return;
+    await fetchJson('/api/mapper/clear', { method: 'POST', body: JSON.stringify({ target: 'roles' }) });
+    setMapRoles([]); setMapRolesTotal(0); setMapRolesSelected(new Set());
+    setMapRoleDetail([]); setMapRoleDetailFor('');
+    setMapRoleMsg('Roles cleared.');
+  }
+
+  function mapHandleRolesFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) return;
+      const headers = lines[0].split('\t').map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(l => {
+        const vals = l.split('\t');
+        return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+      });
+      setMapRoleLoading(true);
+      try {
+        const r = await fetchJson('/api/mapper/roles/import-tsv', { method: 'POST', body: JSON.stringify({ rows }) });
+        setMapRoleMsg(`Imported ${r.inserted} row(s) from file`);
+        mapLoadRoles();
+      } catch (ex) { setMapRoleErr(ex.message); }
+      finally { setMapRoleLoading(false); if (mapRolesFileRef.current) mapRolesFileRef.current.value = ''; }
+    };
+    reader.readAsText(file);
+  }
+
+  async function mapExportRoles() {
+    if (!mapRoles.length) { alert('No data to export.'); return; }
+    try {
+      const url = `${API_BASE}/api/mapper/roles?format=csv`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Export failed: ${response.statusText}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl; a.download = `map_roles.csv`; a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) { console.error('Export failed', err); alert('Export failed: ' + err.message); }
+  }
+
+  async function mapLoadRoleTcodesFromDb() {
+    setMapRoleErr(''); setMapRoleMsg('');
+    if (!selectedRealm) { setMapRoleErr('Select an active SAP realm first'); return; }
+    setMapRoleLoading(true);
+    try {
+      const r = await fetchJson('/api/mapper/roles/load-tcodes-from-db', { method: 'POST', body: JSON.stringify({ realm: selectedRealm.trim() }) });
+      setMapRoleMsg(`Loaded ${r.inserted} role/tcode row(s) from DB`);
+    } catch (e) { setMapRoleErr(e.message); }
+    finally { setMapRoleLoading(false); }
+  }
+
+  async function mapRemoveSelectedRoles() {
+    if (!mapRolesSelected.size) { alert('Select at least one role to remove'); return; }
+    await fetchJson('/api/mapper/roles/remove', { method: 'POST', body: JSON.stringify({ agrNames: Array.from(mapRolesSelected) }) });
+    setMapRolesSelected(new Set());
+    setMapRoleDetail([]); setMapRoleDetailFor('');
+    mapLoadRoles();
+  }
+
+  async function mapShowRoleDetail(agrName) {
+    setMapElementDetailFor('');   // closing view "element":drill-down show last selection
+    setMapRoleDetailFor(agrName);
+    try {
+      const data = await fetchJson(`/api/mapper/roles/${encodeURIComponent(agrName)}/tcodes`);
+      setMapRoleDetail(data.rows || []);
+    } catch (e) { console.error(e); }
+  }
+
+  async function mapRun() {
+    setMapRunErr(''); setMapRunMsg('');
+    if (!window.confirm("This will overwrite previous mapping results. Proceed?")) return;
+    setMapRunLoading(true);
+    try {
+      const r = await fetchJson('/api/mapper/run', { method: 'POST', body: JSON.stringify({ calculateExtra: mapCalculateExtra }) });
+      setMapRunMsg(`Mapping complete: ${r.total} result(s)`);
+      setMapResults(r.rows || []);
+      setMapResultsTotal(r.total || 0);
+      setMapResultsPage(0);
+    } catch (e) { setMapRunErr(e.message); }
+    finally { setMapRunLoading(false); }
+  }
+
+  async function mapExportResults() {
+    if (!mapResultsTotal) return;
+    const resp = await fetch(`${API_BASE}/api/mapper/results/export-csv`);
+    if (!resp.ok) { alert('Export failed'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `mapper_results_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function mapToggleSelected(setFn, set, key) {
+    const next = new Set(set);
+    next.has(key) ? next.delete(key) : next.add(key);
+    setFn(next);
+  }
+
   function renderCoverageSection() {
     const panelStyle = { background: 'white', border: '1px solid #ddd', borderRadius: 8, padding: 24, marginBottom: 24 };
     const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
@@ -2896,6 +3167,211 @@ async function executeRfcBatch() {
           ) : (
             <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
               No results yet. Add users, load roles, then click Run Coverage Analysis.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderMapperSection() {
+    const panelStyle = { background: 'white', border: '1px solid #ddd', borderRadius: 8, padding: 24, marginBottom: 24 };
+    const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
+    const inputStyle = { padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+    const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
+
+    return (
+      <div style={{ maxWidth: 1300 }}>
+        <h1>Mapper</h1>
+        <p style={{ color: '#666', marginBottom: 24 }}>Map elements' transactions onto a set of candidate roles (greedy set-cover).</p>
+
+        <div style={{ display: 'flex', gap: 24 }}>
+          {/* Element to Map panel */}
+          <div style={{ ...panelStyle, flex: 1 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Element to Map</h2>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <label style={labelStyle}>Element ID (wildcards % and _ supported)</label>
+                <input style={inputStyle} value={mapElementPattern} onChange={e => setMapElementPattern(e.target.value)}
+                  placeholder="e.g. ZTEST%" onKeyDown={e => e.key === 'Enter' && mapAddElement()} />
+              </div>
+              <button style={btnStyle('#2e7d32')} onClick={mapAddElement} disabled={mapElementLoading}>
+                {mapElementLoading ? 'Adding...' : 'Add Users'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <input ref={mapElementsFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={mapHandleElementsFile} />
+              <button style={btnStyle('#555')} onClick={() => mapElementsFileRef.current?.click()}>Import Element to Map</button>
+              <button style={btnStyle('#1976d2')} onClick={mapExportElements} disabled={!mapElements.length}>Export Element to Map</button>
+              <button style={btnStyle('#1a73e8')} onClick={mapBuildElementStats} disabled={mapStatLoading}>
+                {mapStatLoading ? 'Loading...' : 'Get Users Statistic'}
+              </button>
+              <button style={btnStyle('#e65100')} onClick={mapRemoveSelectedElements} disabled={!mapElementsSelected.size}>Remove Users</button>
+              <button style={btnStyle('#c62828')} onClick={mapClearElements}>Clear ElementID</button>
+            </div>
+            {mapElementMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{mapElementMsg}</p>}
+            {mapElementErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{mapElementErr}</p>}
+            {mapElements.length > 0 && (
+              <div style={{ marginTop: 12, overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
+                <p style={{ fontSize: 12, color: '#666', margin: '0 0 6px' }}>Showing {mapElements.length} of {mapElementsTotal} element(s)</p>
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                  <thead><tr style={{ background: '#f5f5f5' }}>
+                    <th style={{ padding: '4px 8px' }}></th>
+                    {['Element ID', 'Description'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>{mapElements.map((el, i) => (
+                    <tr key={el.elementid} style={{ background: mapElementDetailFor === el.elementid ? '#e3f2fd' : (i % 2 === 0 ? 'white' : '#fafafa'), cursor: 'pointer' }}
+                      onClick={() => mapShowElementDetail(el.elementid)}>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={mapElementsSelected.has(el.elementid)}
+                          onChange={() => mapToggleSelected(setMapElementsSelected, mapElementsSelected, el.elementid)} />
+                      </td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{el.elementid}</td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{el.element_description}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          {/* Mapping Item panel */}
+          <div style={{ ...panelStyle, flex: 1 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Mapping Item</h2>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <label style={labelStyle}>Role name (wildcards % and _ supported)</label>
+                <input style={inputStyle} value={mapRolePattern} onChange={e => setMapRolePattern(e.target.value)}
+                  placeholder="e.g. Z_ROLE%" onKeyDown={e => e.key === 'Enter' && mapAddRole()} />
+              </div>
+              <button style={btnStyle('#2e7d32')} onClick={mapAddRole} disabled={mapRoleLoading}>
+                {mapRoleLoading ? 'Adding...' : 'Add Mapping item'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <input ref={mapRolesFileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={mapHandleRolesFile} />
+              <button style={btnStyle('#555')} onClick={() => mapRolesFileRef.current?.click()}>Import Mapping Roles</button>
+              <button style={btnStyle('#1976d2')} onClick={mapExportRoles} disabled={!mapRoles.length}>Export Mapping Roles</button>
+              <button style={btnStyle('#1a73e8')} onClick={mapLoadRoleTcodesFromDb} disabled={mapRoleLoading}>Get tcodes from DB</button>
+              <button style={btnStyle('#e65100')} onClick={mapRemoveSelectedRoles} disabled={!mapRolesSelected.size}>Remove item</button>
+              <button style={btnStyle('#c62828')} onClick={mapClearRoles}>Clear Roles</button>
+            </div>
+            {mapRoleMsg && <p style={{ color: 'green', fontSize: 13, margin: '4px 0' }}>{mapRoleMsg}</p>}
+            {mapRoleErr && <p style={{ color: 'crimson', fontSize: 13, margin: '4px 0' }}>{mapRoleErr}</p>}
+            {mapRoles.length > 0 && (
+              <div style={{ marginTop: 12, overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
+                <p style={{ fontSize: 12, color: '#666', margin: '0 0 6px' }}>Showing {mapRoles.length} of {mapRolesTotal} role(s)</p>
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                  <thead><tr style={{ background: '#f5f5f5' }}>
+                    <th style={{ padding: '4px 8px' }}></th>
+                    {['Role', 'Description', 'Type'].map(h => <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>{mapRoles.map((r, i) => (
+                    <tr key={r.agr_name} style={{ background: mapRoleDetailFor === r.agr_name ? '#e3f2fd' : (i % 2 === 0 ? 'white' : '#fafafa'), cursor: 'pointer' }}
+                      onClick={() => mapShowRoleDetail(r.agr_name)}>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={mapRolesSelected.has(r.agr_name)}
+                          onChange={() => mapToggleSelected(setMapRolesSelected, mapRolesSelected, r.agr_name)} />
+                      </td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_name}</td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.agr_description}</td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{r.role_type}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Transactions drill-down */}
+        {(mapElementDetailFor || mapRoleDetailFor) && (
+          <div style={panelStyle}>
+            <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>
+              Transactions {mapElementDetailFor ? `— element ${mapElementDetailFor}` : `— role ${mapRoleDetailFor}`}
+            </h2>
+            <div style={{ overflowX: 'auto', maxHeight: 260, overflowY: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: '#f5f5f5' }}>
+                  {(mapElementDetailFor ? ['Tcode', 'Description', 'N. Exec'] : ['Tcode', 'Description']).map(h =>
+                    <th key={h} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {(mapElementDetailFor ? mapElementDetail : mapRoleDetail).map((row, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.tcode}</td>
+                      <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.tcode_description}</td>
+                      {mapElementDetailFor && <td style={{ padding: '4px 8px', borderBottom: '1px solid #eee' }}>{row.n_exec}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Run & Results panel */}
+        <div style={panelStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 16 }}>Results</h2>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <label style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input type="checkbox" checked={mapCalculateExtra} onChange={e => setMapCalculateExtra(e.target.checked)} />
+                Calculate Extra
+              </label>
+              <button style={btnStyle('#c62828')} onClick={mapClearResults}>Clear Results</button>
+              <button style={btnStyle('#555')} onClick={() => mapLoadResults(0)}>Refresh</button>
+              <button style={btnStyle('#2e7d32')} onClick={mapExportResults} disabled={!mapResultsTotal}>Export Results</button>
+              <button style={btnStyle('#1a73e8')} onClick={mapRun} disabled={mapRunLoading}>
+                {mapRunLoading ? 'Running...' : 'Run mapping'}
+              </button>
+            </div>
+          </div>
+          {mapRunMsg && <p style={{ color: 'green', fontSize: 13, margin: '0 0 8px' }}>{mapRunMsg}</p>}
+          {mapRunErr && <p style={{ color: 'crimson', fontSize: 13, margin: '0 0 8px' }}>{mapRunErr}</p>}
+          {mapRunLoading ? (
+            <p style={{ color: '#888', fontSize: 13 }}>Running mapping...</p>
+          ) : mapResults.length > 0 ? (
+            <>
+              <div style={{ overflowX: 'auto', maxHeight: 380, overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {Object.keys(mapResults[0]).map(k => (
+                        <th key={k} style={{ padding: '5px 8px', textAlign: 'left', borderBottom: '1px solid #ddd', whiteSpace: 'nowrap' }}>{k}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mapResults.map((row, i) => {
+                      const bg = row.status === '01-COVERED' ? '#e8f5e9'
+                               : row.status === '02-MISSING' ? '#ffebee'
+                               : row.status === '03-EXTRA'   ? '#fff8e1'
+                               : 'white';
+                      return (
+                        <tr key={i} style={{ background: bg }}>
+                          {Object.values(row).map((v, j) => (
+                            <td key={j} style={{ padding: '4px 8px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>
+                              {v === null || v === undefined ? '' : String(v)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Showing {mapResultsPage * PAGE_SIZE + 1}–{Math.min((mapResultsPage + 1) * PAGE_SIZE, mapResultsTotal)} of {mapResultsTotal}</span>
+                <span>
+                  <button onClick={() => mapLoadResults(0)} disabled={mapResultsPage === 0} style={{ marginRight: 4 }}>First</button>
+                  <button onClick={() => mapLoadResults(mapResultsPage - 1)} disabled={mapResultsPage === 0} style={{ marginRight: 4 }}>Prev</button>
+                  <button onClick={() => mapLoadResults(mapResultsPage + 1)} disabled={mapResultsPage >= Math.ceil(mapResultsTotal / PAGE_SIZE) - 1} style={{ marginRight: 4 }}>Next</button>
+                  <button onClick={() => mapLoadResults(Math.ceil(mapResultsTotal / PAGE_SIZE) - 1)} disabled={mapResultsPage >= Math.ceil(mapResultsTotal / PAGE_SIZE) - 1}>Last</button>
+                </span>
+              </div>
+            </>
+          ) : (
+            <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+              No results yet. Add elements, load role tcodes, then click Run mapping.
             </p>
           )}
         </div>
@@ -3329,6 +3805,10 @@ async function executeRfcBatch() {
               <span style={{ fontSize: 16 }}>⚖️</span>
               {!sidebarCollapsed && <span>Coverage</span>}
             </button>
+            <button style={navBtnStyle(section === 'mapper')} disabled={!selectedRealm} onClick={() => setSection('mapper')} title="Mapper">
+              <span style={{ fontSize: 16 }}>🧩</span>
+              {!sidebarCollapsed && <span>Mapper</span>}
+            </button>
           </div>
         </div>
 
@@ -3369,6 +3849,7 @@ async function executeRfcBatch() {
         {section === 'rfc' ? renderRfcSection() : null}
         {section === 'sod' ? renderSodSection() : null}
         {section === 'coverage' ? renderCoverageSection() : null}
+        {section === 'mapper' ? renderMapperSection() : null}
       </section>
     </main>
   );

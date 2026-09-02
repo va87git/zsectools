@@ -9,6 +9,7 @@
 - [RFC Execution](#rfc-execution)
 - [SOD & Audit](#sod--audit)
 - [Coverage](#coverage)
+- [Mapper](#mapper)
 - [Settings](#settings)
   - [General](#general)
   - [Health Checks](#health-checks)
@@ -171,6 +172,80 @@ Run the analysis and review the coverage metrics.
 
 #### Coverage Result Indicators
 The analysis classifies results into distinct status categories for quick review: see [Understanding Analysis Results](#understanding-analysis-results)
+
+## Mapper
+
+The **Mapper Analysis** section allows you to identify the most suitable roles to assign to a user, a composite role, or any other transaction container (defined as an "element to map").
+The algorithm operates as follows:
+* Group transactions for each element to be analyzed (element to map).
+* Search among the candidate roles (mapping items/roles) for the one containing the highest number of required transactions.
+  * If 2 candidate roles contain the same number of target transactions, the role with the fewest total transactions overall wins.
+  * If both candidates also have the exact same total number of transactions, the one that comes first alphabetically is selected (as a fallback rule).
+* The logic iterates until all transactions for the "elements to map" have been evaluated.
+
+This analysis tool should be used within a carefully designed authorization model—typically one featuring role families divided by access levels and based on the subset principle:
+In a role family, the "full" level role contains all transactions for that family, the "edit" level contains only "edit" and "read" transactions, and the "read" level contains only "read" transactions.
+This allows the algorithm to effectively identify only the role with the exact access level required by the user (or element to map).
+
+### Overview & Core Logic
+
+This analysis is specifically tailored for business users and business roles. Consequently, it is important to avoid mapping IT/ICT users or roles, which are typically very broad and contain ranges or wildcards (`*`) for the `S_TCODE` auth object.
+
+The workflow is as follows:
+1. **Define Users / Elements to Map**: Specify which users to analyze (or a fictitious container).
+2. **Define Mapping Roles**: Load or import the candidate role-tcode mappings to test.
+3. **Fetch Usage Data**: The system retrieves historical transaction execution statistics for each user, if needed.
+4. **Evaluate Proposed Mapping**: Checks if executed transactions are covered by the candidate role mappings provided in Step 2 (using the algorithm described above).
+5. **Generate Results**: Outputs the final coverage matrix for comparison.
+
+---
+
+### Understanding Analysis Results
+
+While most coverage statuses are self-explanatory, note the following key states:
+
+* **`01-COVERED`**: The transaction is covered by the proposed role assignments.
+* **`02-MISSING`**: The transaction is not covered by any role specified as a "mapping item".
+* **`03-EXTRA`**: The proposed roles grant access to transactions that the user has never executed in the retrieved usage statistics, or that are not listed in simulation assignments.
+
+---
+
+### 1. Element to Map Panel
+
+Define the scope of users, composite roles, or any containers you wish to include in the Mapper Analysis.
+
+* **Element ID Input**: Input a specific User ID or use SQL wildcards (`%` and `_`) to select multiple users (e.g., `ZTEST%`).
+* **Add user**: Executes a search/filter and adds matching users to the analysis queue.
+* **Import Element to Map**: Select a local CSV, TSV, or TXT file containing elementid-tcode relationships you would like to analyze. Data is loaded in append mode.
+* **Export Element to Map**: Downloads a CSV file containing the currently loaded list of elements to map.
+* **Get Users statistics**: Automatically fetches users' transaction execution statistics to populate the elementId-tcode relationships to be mapped.
+* **Remove Users**: Removes selected (checked) users/elementIDs from the workspace.
+* **Clear ElementID**: Clears all loaded elements.
+
+---
+
+### 2. Mapping Item Panel
+
+Manage the roles used to match the transaction requirements of the "elements to map".
+
+* **Role Name Input**: Input a specific Role Name or use SQL wildcards (`%` and `_`) to select multiple roles (e.g., `ZROLE%`).
+* **Get tcodes from DB**: Automatically fetches tcodes assigned to roles directly from the database. ***Attention***: Tcodes are evaluated from `S_TCODE` object values: any range or wildcard will be expanded.
+* **Import Mapping roles**: Uploads and imports the role-tcode assignments file. Data is loaded in append mode.
+* **Export Mapping roles**: Downloads a CSV file containing all currently active mapping role-tcode assignments in the buffer.
+* **Remove item**: Removes selected (checked) roles from the workspace.
+* **Clear Roles**: Clears all loaded roles from the workspace.
+
+---
+
+### 3. Results Panel
+
+Run the analysis and review the coverage metrics.
+
+* **Run mapping**: Triggers the background processing engine to evaluate `element-to-map - transaction` against `role-tcode` for all loaded elements.
+* **Refresh**: Reloads the results table view with the latest status from the backend (usually not necessary).
+* **Export Results**: Exports the full mapper results matrix into a formatted CSV file.
+* **Clear Results**: Drops the results table.
+
 
 ## Settings
 

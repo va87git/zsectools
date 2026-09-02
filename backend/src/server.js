@@ -53,7 +53,22 @@ import {
   loadCoverageRolesFromDb,
   getCoverageRoles,
   runCoverageAnalysis,
-  getCoverageResults
+  getCoverageResults,
+  searchAndAddMapperElements,
+  getMapperElements,
+  importMapperElementsFromTsv,
+  removeMapperElements,
+  buildMapperElementTcodes,
+  getMapperElementTcodes,
+  searchAndAddMapperRoles,
+  getMapperRoles,
+  importMapperRolesFromTsv,
+  loadMapperRoleTcodesFromDb,
+  getMapperRoleTcodes,
+  removeMapperRoles,
+  clearMapperData,
+  runMapperAnalysis,
+  getMapperResults
 } from './db.js';
 import {
   fetchUserStatistics,
@@ -1398,9 +1413,248 @@ app.get('/api/coverage/results/export-csv', async (req, res) => {
   finally { client.release(); }
 });
 
+// ── MAPPER ──────────────────────────────────────────────────────────────────
+
+app.post('/api/mapper/add-element', async (req, res) => {
+  try {
+    const realm   = String(req.body?.realm   || '').trim();
+    const pattern = String(req.body?.pattern || '').trim();
+    if (!realm || !pattern) { res.status(400).json({ ok: false, error: 'realm and pattern are required' }); return; }
+    const result = await searchAndAddMapperElements(realm, pattern);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/elements', async (req, res) => {
+  try {
+    const format = req.query?.format || 'json';
+    const limit  = Number(req.query?.limit  || 200);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getMapperElements(limit, offset);
+    if (format === 'csv') {
+      // Export combined: 1 line for each element×tcode (join on map_element_tcodes),
+      // all "element_to_map" tables are feeded by "Import Element to Map".
+      // "Elements to map" without tcodes are shown anyway (LEFT JOIN).
+      const client = await pool.connect();
+      try {
+        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="map_elements.csv"');
+        const BATCH = 500;
+        let batchOffset = 0;
+        let headerWritten = false;
+        while (true) {
+          const batch = await client.query(
+            `SELECT e.elementid, e.element_description, t.tcode, t.tcode_description, t.n_exec
+             FROM map_elements e
+             LEFT JOIN map_element_tcodes t ON t.elementid = e.elementid
+             ORDER BY e.elementid, t.tcode
+             LIMIT $1 OFFSET $2`,
+            [BATCH, batchOffset]
+          );
+          if (batch.rows.length === 0) break;
+          if (!headerWritten) {
+            res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+            headerWritten = true;
+          }
+          for (const row of batch.rows) {
+            res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+          }
+          if (batch.rows.length < BATCH) break;
+          batchOffset += BATCH;
+        }
+        res.end();
+      } finally { client.release(); }
+      return;
+    }
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/elements/import-tsv', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) { res.status(400).json({ ok: false, error: 'No rows provided' }); return; }
+    const result = await importMapperElementsFromTsv(rows);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/elements/remove', async (req, res) => {
+  try {
+    const elementIds = Array.isArray(req.body?.elementIds) ? req.body.elementIds : [];
+    if (!elementIds.length) { res.status(400).json({ ok: false, error: 'elementIds is required' }); return; }
+    const result = await removeMapperElements(elementIds);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/build-element-tcodes', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    const result = await buildMapperElementTcodes(realm);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/elements/:elementId/tcodes', async (req, res) => {
+  try {
+    const result = await getMapperElementTcodes(req.params.elementId);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/add-role', async (req, res) => {
+  try {
+    const realm   = String(req.body?.realm   || '').trim();
+    const pattern = String(req.body?.pattern || '').trim();
+    if (!realm || !pattern) { res.status(400).json({ ok: false, error: 'realm and pattern are required' }); return; }
+    const result = await searchAndAddMapperRoles(realm, pattern);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/roles', async (req, res) => {
+  try {
+    const format = req.query?.format || 'json';
+    const limit  = Number(req.query?.limit  || 200);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getMapperRoles(limit, offset);
+    if (format === 'csv') {
+      // Export combined: 1 line for each role×tcode (join on map_role_tcodes),
+      // all "mapping" tables are feeded by "Import Mapping Roles".
+      // Roles without tcodes are shown anyway (LEFT JOIN).
+      const client = await pool.connect();
+      try {
+        res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="map_roles.csv"');
+        const BATCH = 500;
+        let batchOffset = 0;
+        let headerWritten = false;
+        while (true) {
+          const batch = await client.query(
+            `SELECT r.agr_name, r.agr_description, r.role_type, t.tcode, t.tcode_description
+             FROM map_roles r
+             LEFT JOIN map_role_tcodes t ON t.agr_name = r.agr_name
+             ORDER BY r.agr_name, t.tcode
+             LIMIT $1 OFFSET $2`,
+            [BATCH, batchOffset]
+          );
+          if (batch.rows.length === 0) break;
+          if (!headerWritten) {
+            res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+            headerWritten = true;
+          }
+          for (const row of batch.rows) {
+            res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+          }
+          if (batch.rows.length < BATCH) break;
+          batchOffset += BATCH;
+        }
+        res.end();
+      } finally { client.release(); }
+      return;
+    }
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/roles/import-tsv', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) { res.status(400).json({ ok: false, error: 'No rows provided' }); return; }
+    const result = await importMapperRolesFromTsv(rows);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/roles/load-tcodes-from-db', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    const result = await loadMapperRoleTcodesFromDb(realm);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/roles/:agrName/tcodes', async (req, res) => {
+  try {
+    const result = await getMapperRoleTcodes(req.params.agrName);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/roles/remove', async (req, res) => {
+  try {
+    const agrNames = Array.isArray(req.body?.agrNames) ? req.body.agrNames : [];
+    if (!agrNames.length) { res.status(400).json({ ok: false, error: 'agrNames is required' }); return; }
+    const result = await removeMapperRoles(agrNames);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/clear', async (req, res) => {
+  try {
+    const target = String(req.body?.target || 'all').trim();
+    await clearMapperData(target);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/mapper/run', async (req, res) => {
+  try {
+    const calculateExtra = req.body?.calculateExtra !== false;
+    const result = await runMapperAnalysis(calculateExtra);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/results', async (req, res) => {
+  try {
+    const limit  = Number(req.query?.limit  || 100);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getMapperResults(limit, offset);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/mapper/results/export-csv', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const exists = (await client.query(
+      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name='map_results')`
+    )).rows[0].exists;
+    if (!exists) { res.status(404).json({ ok: false, error: 'No results available' }); return; }
+    res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="mapper_results_${new Date().toISOString().split('T')[0]}.csv"`);
+    const BATCH = 500;
+    let batchOffset = 0;
+    let headerWritten = false;
+    while (true) {
+      const batch = await client.query(
+        `SELECT * FROM map_results ORDER BY elementid, status, tcode LIMIT $1 OFFSET $2`,
+        [BATCH, batchOffset]
+      );
+      if (batch.rows.length === 0) break;
+      if (!headerWritten) {
+        res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+        headerWritten = true;
+      }
+      for (const row of batch.rows) {
+        res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+      }
+      if (batch.rows.length < BATCH) break;
+      batchOffset += BATCH;
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+  } finally { client.release(); }
+});
+
 const port = Number(process.env.PORT || 3000);
 
-// 3. Middleware finale "Catch-all" correct
+// 3. Middleware; final "Catch-all" correct
 app.use((req, res, next) => {
   // If the request is for an API that does not exist, respond 404
   if (req.url.startsWith('/api')) {
