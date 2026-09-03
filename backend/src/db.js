@@ -71,6 +71,7 @@ export async function ensureSapImportTables() {
     ON sap_table_import_rows (realm, table_name, imported_at DESC)
   `);
 
+  /* //old table:
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sap_user_statistics (
       id BIGSERIAL PRIMARY KEY,
@@ -80,6 +81,7 @@ export async function ensureSapImportTables() {
       imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  */
 
   // Separate table for USERTCODE rows extracted from SWNC_COLLECTOR_GET_AGGREGATES.
   await pool.query(`
@@ -533,6 +535,7 @@ export async function getImportedTableRows(realm, tableName, limit = 100, offset
   }
 }
 
+/* //old function:
 export async function saveUserStatistics(realm, selectedAtIso, payload) {
   const result = await pool.query(
     `INSERT INTO sap_user_statistics (realm, selected_at, payload)
@@ -542,6 +545,7 @@ export async function saveUserStatistics(realm, selectedAtIso, payload) {
   );
   return result.rows[0];
 }
+*/
 
 export async function saveUserStats(realm, periodType, selectedAtIso, usertcodeRows, mode = 'overwrite') {
   if (!usertcodeRows || usertcodeRows.length === 0) return;
@@ -2301,8 +2305,14 @@ export async function getAggregatedUserStats(realm) {
 
 export async function deleteUserStatsBatch(realm, periodType, selectedAt) {
   const sanitizedTableName = 'sap_raw_user_stats';
+  const legacyTableName = 'sap_user_stats';
   const result = await pool.query(
     `DELETE FROM "${sanitizedTableName}"
+     WHERE realm = $1 AND period_type = $2 AND selected_at = $3::timestamptz`,
+    [realm, periodType, selectedAt]
+  );
+  const legacyResult = await pool.query(
+    `DELETE FROM "${legacyTableName}"
      WHERE realm = $1 AND period_type = $2 AND selected_at = $3::timestamptz`,
     [realm, periodType, selectedAt]
   );
@@ -2314,6 +2324,40 @@ export async function buildAdditionalInfos(realm) {
   if (!realmConfig) {
     throw new Error(`Realm not found: ${realm}`);
   }
+
+  // ── Check mandatory tables/data — PRIMA di aprire connessione e transazione,
+  // e con throw (non return) per allinearsi alla convenzione usata nel resto
+  // del file: errore = eccezione intercettata dal catch di server.js.
+  const mandatoryTables = [
+    `sap_raw_${realm}_adr6`,
+    `sap_raw_${realm}_usr02`,
+    `sap_raw_${realm}_usr21`,
+    `sap_raw_${realm}_adrp`,
+    `sap_raw_${realm}_agr_1251`,
+    `sap_raw_${realm}_tstc`,
+    `sap_raw_${realm}_agr_texts`,
+    `sap_raw_${realm}_tstct`,
+    `sap_raw_${realm}_agr_flags`,
+    `sap_raw_${realm}_agr_define`,
+    `sap_raw_${realm}_agr_agrs`,
+  ];
+
+  for (const tableName of mandatoryTables) {
+    if (!(await tableExists(tableName))) {
+      throw new Error('Some mandatory tables are missing. Please import them first');
+    }
+  }
+  if (!(await tableExists('sap_raw_user_stats'))) {
+    throw new Error('Statistics are missing. Please import them first');
+  }
+  const statsCheck = await pool.query(
+    `SELECT EXISTS (SELECT 1 FROM sap_raw_user_stats WHERE realm = $1) AS has_rows`,
+    [realm]
+  );
+  if (!statsCheck.rows[0].has_rows) {
+    throw new Error('Statistics are missing. Please import them first');
+  }
+  // end check tables/data exist.
 
   // Get realm_reference_date, default to current date if not set
   let sProjectDate = realmConfig.realm_reference_date;
@@ -2337,7 +2381,6 @@ export async function buildAdditionalInfos(realm) {
 
   try {
     await client.query('BEGIN');
-
 
     // Drop target tables if exists
     await client.query(`DROP TABLE IF EXISTS "yr_${realm}_user_complete_info"`);
