@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16
-    container_name: app-postgres-test
+    container_name: app-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: appdb
@@ -21,7 +21,7 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: app-backend-test
+    container_name: app-backend
     restart: unless-stopped
     depends_on:
       db:
@@ -59,7 +59,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: app-frontend-test
+    container_name: app-frontend
     restart: unless-stopped
     depends_on:
       - backend
