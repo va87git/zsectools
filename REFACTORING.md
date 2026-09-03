@@ -95,7 +95,7 @@ Async handlers and useEffect hooks stay in App (they are the cross-section
 - `PAGE_SIZE` and `availableReports` moved to their natural homes
   (`constants.js` and `ReportsSection.jsx`).
 
-## Verification performed
+## Checks performed
 
 | Check | Result |
 |---|---|
