@@ -1,118 +1,122 @@
-# Refactoring zsectools 1.2.2 — Split dei file monolitici
+# Refactoring zsectools 1.2.2 — Splitting the monolithic files
 
-## Obiettivo
+## Objective
 
-Ridurre i file sorgente che superavano le 3000 righe in moduli di dominio coerenti,
-mantenendo **comportamento e superficie pubblica identici** (refactoring
-behavior-preserving). Nessuna modifica agli endpoint REST, al database o alla logica
-di business: solo riorganizzazione del codice.
+Reduce the source files that exceeded 3000 lines into coherent domain modules,
+keeping **behavior and public surface identical** (behavior-preserving
+refactoring). No changes to REST endpoints, database, or business logic: only
+code reorganization.
 
-## Principi applicati
+## Principles applied
 
-1. **Codice spostato, non riscritto** — i corpi delle funzioni sono stati spostati
-   verbatim nei nuovi moduli; nessuna modifica alla logica.
-2. **Facade di compatibilità** — `db.js` esiste ancora e re-esporta tutto da `./db/`;
-   `server.js` non è stato toccato.
-3. **Dipendenze esplicite** — ogni modulo dichiara i propri import; le sezioni React
-   ricevono tramite un oggetto `ctx` solo lo stato e i handler che effettivamente usano.
-4. **Verifica automatica** — ogni file generato è stato controllato con parse AST,
-   ESLint (`no-undef`) e smoke test di import/build.
+1. **Code moved, not rewritten** — function bodies were moved verbatim into the
+   new modules; no changes to the logic.
+2. **Compatibility facade** — `db.js` still exists and re-exports everything
+   from `./db/`; `server.js` was not touched.
+3. **Explicit dependencies** — each module declares its own imports; the React
+   sections receive through a `ctx` object only the state and handlers they
+   actually use.
+4. **Automated verification** — every generated file was checked with AST
+   parsing, ESLint (`no-undef`), and import/build smoke tests.
 
-## Backend: `db.js` (4160 righe → 11 moduli)
+## Backend: `db.js` (4,160 lines → 11 modules)
 
-| Modulo (`backend/src/db/`) | Righe | Responsabilità |
+| Module (`backend/src/db/`) | Lines | Responsibility |
 |---|---|---|
-| `client.js` | 146 | Pool PostgreSQL, health check, tabelle di sistema, app settings |
-| `realms.js` | 91 | CRUD dei realm SAP (tabella `sap_realms`) |
-| `sapImport.js` | 304 | Import tabelle SAP: conversione tipi (`convertSapDate/Time/Packed`, `mapSapTypeToPg`) e COPY bulk |
-| `userStats.js` | 296 | Statistiche utente: salvataggio, lettura, import/export, aggregazioni |
-| `txtTransfer.js` | 171 | Export/import tabelle e statistiche verso/da TXT |
-| `sod.js` | 208 | Tabelle SOD: import da TXT, ruleset, export, pulizia |
-| `utils.js` | 13 | Helper condivisi (`tableExists`) |
-| `sodAnalysis.js` | 1106 | Motore SOD: RA elements, descrizioni, `runSodAnalysis`, authorization checks |
+| `client.js` | 146 | PostgreSQL pool, health check, system tables, app settings |
+| `realms.js` | 91 | CRUD for SAP realms (`sap_realms` table) |
+| `sapImport.js` | 304 | SAP table import: type conversion (`convertSapDate/Time/Packed`, `mapSapTypeToPg`) and bulk COPY |
+| `userStats.js` | 296 | User statistics: save, read, import/export, aggregations |
+| `txtTransfer.js` | 171 | Export/import of tables and statistics to/from TXT |
+| `sod.js` | 208 | SOD tables: TXT import, ruleset, export, cleanup |
+| `utils.js` | 13 | Shared helpers (`tableExists`) |
+| `sodAnalysis.js` | 1106 | SOD engine: RA elements, descriptions, `runSodAnalysis`, authorization checks |
 | `reports.js` | 1103 | `buildAdditionalInfos`, `executeReport`, `getReportRows` |
-| `coverage.js` | 347 | Analisi Coverage: utenti, ruoli, tcodes, risultati |
-| `mapper.js` | 365 | Analisi Mapper: elementi, ruoli, tcodes, risultati |
-| `index.js` | 14 | Barrel: re-export della superficie pubblica |
+| `coverage.js` | 347 | Coverage analysis: users, roles, tcodes, results |
+| `mapper.js` | 365 | Mapper analysis: elements, roles, tcodes, results |
+| `index.js` | 14 | Barrel: re-export of the public surface |
 
-### Compatibilità
+### Compatibility
 
-- `backend/src/db.js` è ora una **facade** da 4 righe: `export * from './db/index.js'`.
-  Tutti gli import esistenti (`server.js`) continuano a funzionare senza modifiche.
-- `server.js` e `sap.js` sono **byte-per-byte identici** all'originale.
-- Unica aggiunta alla superficie pubblica: `tableExists` (era privato nel monolite,
-  ora condiviso dai moduli di dominio). Additiva, non breaking.
+- `backend/src/db.js` is now a 4-line **facade**: `export * from './db/index.js'`.
+  All existing imports (`server.js`) keep working without any change.
+- `server.js` and `sap.js` are **byte-for-byte identical** to the original.
+- Only addition to the public surface: `tableExists` (it was private in the
+  monolith, now shared by the domain modules). Additive, non-breaking.
 
-### Grafò delle dipendenze tra moduli
+### Module dependency graph
 
 ```
-client.js  ←  tutti (pool)
+client.js  ←  all modules (pool)
 utils.js   ←  sapImport, sodAnalysis, reports, coverage, mapper (tableExists)
 realms.js  ←  sodAnalysis, reports, coverage (getSapRealm)
 ```
 
-## Frontend: `App.jsx` (3906 righe → App 2196 + 12 file)
+## Frontend: `App.jsx` (3,906 lines → App 2,196 + 12 files)
 
-| File nuovo | Righe | Contenuto |
+| New file | Lines | Content |
 |---|---|---|
-| `src/sections/SettingsSection.jsx` | 283 | Settings + sottosezioni Health / General / About (render helper interni, come prima) |
-| `src/sections/RealmSection.jsx` | 95 | Gestione realm SAP |
-| `src/sections/ReportsSection.jsx` | 231 | Esecuzione report (+ catalogo `availableReports`) |
-| `src/sections/ImportSection.jsx` | 217 | Import tabelle + statistiche |
-| `src/sections/RfcSection.jsx` | 255 | Esecuzione RFC |
+| `src/sections/SettingsSection.jsx` | 283 | Settings + Health / General / About subsections (internal render helpers, as before) |
+| `src/sections/RealmSection.jsx` | 95 | SAP realm management |
+| `src/sections/ReportsSection.jsx` | 231 | Report execution (+ `availableReports` catalog) |
+| `src/sections/ImportSection.jsx` | 217 | Table + statistics import |
+| `src/sections/RfcSection.jsx` | 255 | RFC execution |
 | `src/sections/SodSection.jsx` | 382 | SOD & Audit |
 | `src/sections/CoverageSection.jsx` | 225 | Coverage |
 | `src/sections/MapperSection.jsx` | 224 | Mapper |
-| `src/components/StatusBlock.jsx` | 11 | Componente riutilizzabile di stato |
+| `src/components/StatusBlock.jsx` | 11 | Reusable status component |
 | `src/constants.js` | 2 | `PAGE_SIZE` |
-| `src/styles.js` | 8 | `panelStyle` condiviso |
+| `src/styles.js` | 8 | Shared `panelStyle` |
 
-### Pattern `ctx`
+### The `ctx` pattern
 
-Ogni sezione è un componente che dichiara **esplicitamente** le dipendenze da App:
+Each section is a component that **explicitly** declares its dependencies on
+App:
 
 ```jsx
 export default function SodSection({ ctx }) {
   const { sodRuleset, setSodRuleset, runSodAnalysisAction, ... } = ctx;
-  // ... corpo identico al precedente renderSodSection()
+  // ... body identical to the previous renderSodSection()
 }
 ```
 
-In `App.jsx` i contesti sono costruiti prima del main return (`settingsCtx`,
-`sodCtx`, …) e passati così: `<SodSection ctx={sodCtx} />`. Gli handler async e gli
-useEffect restano in App (sono gli "controller" cross-sezione).
+In `App.jsx` the context objects are built before the main return
+(`settingsCtx`, `sodCtx`, …) and passed like this: `<SodSection ctx={sodCtx} />`.
+Async handlers and useEffect hooks stay in App (they are the cross-section
+"controllers").
 
-### Pulizie incluse (comportamento neutro)
+### Included cleanups (behavior-neutral)
 
-- **`renderRealmSelector` rimosso**: era uno stub che restituiva `null`
-  ("Realm selector removed from individual sections"); anche i 4 punti di chiamata
-  `{renderRealmSelector()}` sono stati eliminati — renderizzavano `null`.
-- **`API_BASE` deduplicato**: era definito identico in `api.js` e `App.jsx`;
-  ora vive solo in `api.js` ed è esportato.
-- `PAGE_SIZE` e `availableReports` spostati nelle loro sedi naturali
-  (`constants.js` e `ReportsSection.jsx`).
+- **`renderRealmSelector` removed**: it was a stub returning `null`
+  ("Realm selector removed from individual sections"); the 4 call sites
+  `{renderRealmSelector()}` were removed as well — they rendered `null`.
+- **`API_BASE` deduplicated**: it was defined identically in both `api.js` and
+  `App.jsx`; it now lives only in `api.js` and is exported.
+- `PAGE_SIZE` and `availableReports` moved to their natural homes
+  (`constants.js` and `ReportsSection.jsx`).
 
-## Verifiche eseguite
+## Verification performed
 
-| Check | Esito |
+| Check | Result |
 |---|---|
-| `node --check` su tutti i file backend | ✅ |
-| ESLint `no-undef` su tutti i file backend | ✅ 0 errori |
-| Import ESM reale della facade `db.js` (smoke test) | ✅ |
-| Confronto superficie esportata db.js originale vs nuova | ✅ identica (salvo `tableExists`, additivo) |
-| Parse AST (babel) di tutti i file frontend generati | ✅ |
-| ESLint `no-undef` su tutti i file frontend | ✅ 0 errori |
-| `vite build` di produzione | ✅ 28 moduli, bundle ok |
-| `package.json` / `package-lock.json` invariati | ✅ |
+| `node --check` on all backend files | ✅ |
+| ESLint `no-undef` on all backend files | ✅ 0 errors |
+| Real ESM import of the `db.js` facade (smoke test) | ✅ |
+| Comparison of exported surface: original vs new `db.js` | ✅ identical (except `tableExists`, additive) |
+| AST parsing (babel) of all generated frontend files | ✅ |
+| ESLint `no-undef` on all frontend files | ✅ 0 errors |
+| Production `vite build` | ✅ 28 modules, bundle ok |
+| `package.json` / `package-lock.json` unchanged | ✅ |
 
-## Prossimi passi consigliati (non inclusi in questa passata)
+## Recommended next steps (not included in this pass)
 
-1. **Decomporre le due funzioni "monolite" residue**: `runSodAnalysis` (~750 righe in
-   `sodAnalysis.js`) ed `executeReport` (~680 in `reports.js`) in sotto-step
-   con nomi significativi.
-2. **Custom hooks per dominio** (`useSod`, `useCoverage`, `useMapper`, …): spostare
-   stato + handler dalle sezioni in hook testabili; App diventerebbe ~300 righe.
-3. **`server.js` (1718 righe)**: suddividere in router Express per dominio
-   (`routes/realms.js`, `routes/sod.js`, …) con lo stesso approccio facade.
-4. **Test di regressione**: prima di intervenire sulle funzioni del punto 1,
-   aggiungere test di caratterizzazione (Vitest + fixture di righe SAP).
+1. **Decompose the two remaining "monolith" functions**: `runSodAnalysis`
+   (~750 lines in `sodAnalysis.js`) and `executeReport` (~680 in `reports.js`)
+   into sub-steps with meaningful names.
+2. **Domain custom hooks** (`useSod`, `useCoverage`, `useMapper`, …): move
+   state + handlers from the sections into testable hooks; App would shrink to
+   ~300 lines.
+3. **`server.js` (1,718 lines)**: split it into per-domain Express routers
+   (`routes/realms.js`, `routes/sod.js`, …) using the same facade approach.
+4. **Regression tests**: before touching the functions in point 1, add
+   characterization tests (Vitest + SAP row fixtures).
