@@ -682,6 +682,11 @@ app.post('/api/export-sap/tables-txt', async (req, res) => {
     // Since we now export one by one from frontend, this will typically have 1 table
     const results = await exportTablesToTxt(realm, tables);
     const first = results[0];
+    //fix #32
+    if (!first) {
+      res.status(404).json({ ok: false, error: `Table does not exist` });
+      return;
+    }
 
     if (first.error) {
       res.status(500).json({ ok: false, error: first.error });
