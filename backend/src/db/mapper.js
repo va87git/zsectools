@@ -254,14 +254,15 @@ export async function clearMapperData(target) {
     await pool.query(`DROP TABLE IF EXISTS map_roles`);
     await pool.query(`DROP TABLE IF EXISTS map_role_tcodes`);
     await pool.query(`DROP TABLE IF EXISTS map_results`);
+    //following commands were TRUNCATE. Changed to DROP for future fields/schema compatibility.
   } else if (target === 'elements') {
-    await pool.query(`TRUNCATE map_elements`);
-    await pool.query(`TRUNCATE map_element_tcodes`);
+    await pool.query(`DROP TABLE IF EXISTS map_elements`);
+    await pool.query(`DROP TABLE IF EXISTS map_element_tcodes`);
   } else if (target === 'roles') {
-    await pool.query(`TRUNCATE map_roles`);
-    await pool.query(`TRUNCATE map_role_tcodes`);
+    await pool.query(`DROP TABLE IF EXISTS map_roles`);
+    await pool.query(`DROP TABLE IF EXISTS map_role_tcodes`);
   } else if (target === 'results') {
-    await pool.query(`TRUNCATE map_results`);
+    await pool.query(`DROP TABLE IF EXISTS map_results`);
   }
   return { ok: true };
 }

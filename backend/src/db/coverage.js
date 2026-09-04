@@ -42,14 +42,15 @@ export async function clearCoverageData(target) {
     await pool.query(`DROP TABLE IF EXISTS cov_roles`);
     await pool.query(`DROP TABLE IF EXISTS cov_roles_tcodes`);
     await pool.query(`DROP TABLE IF EXISTS cov_results`);
+    //following commands were TRUNCATE. Changed to DROP for fix #29
   } else if (target === 'users') {
-    await pool.query(`TRUNCATE cov_users`);
-    await pool.query(`TRUNCATE cov_users_tcodes`);
+    await pool.query(`DROP TABLE IF EXISTS cov_users`);
+    await pool.query(`DROP TABLE IF EXISTS cov_users_tcodes`);
   } else if (target === 'roles') {
-    await pool.query(`TRUNCATE cov_roles`);
-    await pool.query(`TRUNCATE cov_roles_tcodes`);
+    await pool.query(`DROP TABLE IF EXISTS cov_roles`);
+    await pool.query(`DROP TABLE IF EXISTS cov_roles_tcodes`);
   } else if (target === 'results') {
-    await pool.query(`TRUNCATE cov_results`);
+    await pool.query(`DROP TABLE IF EXISTS cov_results`);
   }
   return { ok: true };
 }

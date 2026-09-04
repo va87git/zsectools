@@ -1,4 +1,5 @@
 import { pool } from './client.js';
+import { tableExists } from './utils.js';
 
 // Export/import statistics and tables to TXT files
 // Export functions for TXT format

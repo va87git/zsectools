@@ -61,7 +61,7 @@ export async function upsertSapRealm(payload) {
 export async function deleteSapRealm(realm) {
   // First, delete all associated data for this realm
   await pool.query(`DELETE FROM sap_table_import_rows WHERE realm = $1`, [realm]);
-  await pool.query(`DELETE FROM sap_user_statistics WHERE realm = $1`, [realm]);
+  await pool.query(`DROP TABLE IF EXISTS sap_user_statistics`); //old legacy table. Fix #30
   await pool.query(`DELETE FROM sap_user_stats WHERE realm = $1`, [realm]);
   await pool.query(`DELETE FROM sap_raw_user_stats WHERE realm = $1`, [realm]);
 

@@ -803,68 +803,96 @@ async function executeRfcBatch() {
     }
 
     setExportLoading(true);
+    //fix #32
+    const errors = [];
+    let successCount = 0;
+
     try {
-      //const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
-      // Try to use the File System Access API to pick a folder and write all files there
       if (typeof window.showDirectoryPicker === 'function') {
         const dirHandle = await window.showDirectoryPicker();
+
         for (const tableName of selectedTables) {
-          const response = await fetch(`${API_BASE}/api/export-sap/tables-txt`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ realm: selectedRealm.trim(), tables: [tableName] })
-          });
-          if (!response.ok) {
-            const text = await response.text();
-            let errorMessage = 'Export failed';
-            try {
-              const errJson = JSON.parse(text);
-              errorMessage = errJson.error || errorMessage;
-            } catch (e) {
-              errorMessage = text || errorMessage;
+          try {
+            const response = await fetch(`${API_BASE}/api/export-sap/tables-txt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ realm: selectedRealm.trim(), tables: [tableName] })
+            });
+
+            if (!response.ok) {
+              const text = await response.text();
+              let errorMessage = `Failed to export ${tableName}`;
+              try {
+                const errJson = JSON.parse(text);
+                errorMessage = errJson.error || errorMessage;
+              } catch (e) {
+                errorMessage = text || errorMessage;
+              }
+              // Save error. Next item.
+              errors.push(`${tableName}: ${errorMessage}`);
+              continue;
             }
-            throw new Error(errorMessage);
+
+            const blob = await response.blob();
+            const fileName = `sap_table_${tableName}_${selectedRealm.trim()}_${new Date().toISOString().split('T')[0]}.txt`;
+            const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            successCount++;
+          } catch (singleErr) {
+            errors.push(`${tableName}: ${singleErr.message}`);
           }
-          const blob = await response.blob();
-          const fileName = `sap_table_${tableName}_${selectedRealm.trim()}_${new Date().toISOString().split('T')[0]}.txt`;
-          const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(blob);
-          await writable.close();
         }
-        setImportMsg(`Exported ${selectedTables.length} table(s) to selected folder.`);
       } else {
-        // Fallback to separate downloads if directory picker unavailable
+        // Fallback for standard download
         for (const tableName of selectedTables) {
-          const response = await fetch(`${API_BASE}/api/export-sap/tables-txt`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ realm: selectedRealm.trim(), tables: [tableName] })
-          });
-          if (!response.ok) {
-            const text = await response.text();
-            let errorMessage = 'Export failed';
-            try {
-              const errJson = JSON.parse(text);
-              errorMessage = errJson.error || errorMessage;
-            } catch (e) {
-              errorMessage = text || errorMessage;
+          try {
+            const response = await fetch(`${API_BASE}/api/export-sap/tables-txt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ realm: selectedRealm.trim(), tables: [tableName] })
+            });
+
+            if (!response.ok) {
+              const text = await response.text();
+              let errorMessage = `Failed to export ${tableName}`;
+              try {
+                const errJson = JSON.parse(text);
+                errorMessage = errJson.error || errorMessage;
+              } catch (e) {
+                errorMessage = text || errorMessage;
+              }
+              errors.push(`${tableName}: ${errorMessage}`);
+              continue;
             }
-            throw new Error(errorMessage);
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const defaultFilename = `sap_table_${tableName}_${selectedRealm.trim()}_${new Date().toISOString().split('T')[0]}.txt`;
+            a.download = defaultFilename;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            successCount++;
+          } catch (singleErr) {
+            errors.push(`${tableName}: ${singleErr.message}`);
           }
-          const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          const defaultFilename = `sap_table_${tableName}_${selectedRealm.trim()}_${new Date().toISOString().split('T')[0]}.txt`;
-          a.download = defaultFilename;
-          a.click();
-          window.URL.revokeObjectURL(url);
-          await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
         }
-        setImportMsg(`Exported ${selectedTables.length} table(s) successfully (check your downloads folder)`);
       }
+
+      // Results
+      if (successCount > 0) {
+        setImportMsg(`Exported ${successCount} of ${selectedTables.length} table(s) successfully.`);
+      }
+      if (errors.length > 0) {
+        setImportErr(`Some tables failed:\n` + errors.join('\n'));
+      }
+
     } catch (err) {
+      // catch general errors (eg. void selected folder)
       setImportErr(`Export Error: ${err.message}`);
     } finally {
       setExportLoading(false);
