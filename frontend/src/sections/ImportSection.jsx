@@ -16,6 +16,8 @@ export default function ImportSection({ ctx }) {
   tableHeaders, toggleTable
   } = ctx;
 
+  const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
+
     return (
       <>
         <h1>Import SAP Tables</h1>
@@ -23,58 +25,58 @@ export default function ImportSection({ ctx }) {
 
 
         <div style={panelStyle}>
-          {importErr ? <p style={{ color: 'crimson' }}>{importErr}</p> : null}
-          {importMsg ? <p style={{ color: 'green' }}>{importMsg}</p> : null}
+          {importErr ? <p style={{ color: 'var(--danger)' }}>{importErr}</p> : null}
+          {importMsg ? <p style={{ color: 'var(--success)' }}>{importMsg}</p> : null}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, maxWidth: 1200 }}>
           <div style={panelStyle}>
             <h3>Tables download</h3>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || importLoading} onClick={importTables}>Download selected Tables from SAP</button>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || !selectedTables.length || exportLoading} onClick={exportTablesTxt}>Export TXT</button>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || importTxtLoading} onClick={importTablesTxt}>Import TXT</button>
+              <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || importLoading} onClick={importTables}>Download selected Tables from SAP</button>
+              <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || !selectedTables.length || exportLoading} onClick={exportTablesTxt}>Export TXT</button>
+              <button style={btnStyle('var(--text-muted)')} disabled={!selectedRealm || importTxtLoading} onClick={importTablesTxt}>Import TXT</button>
             </div>
             {importLoading ? (
               <div style={{ marginTop: 10 }}>
-                <div style={{ background: '#e0e0e0', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ background: 'var(--border-strong)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
                   <div style={{
-                    background: '#4caf50',
+                    background: 'var(--success)',
                     height: 20,
                     width: `${(importProgress.current / importProgress.total) * 100}%`,
                     transition: 'width 0.3s ease'
                   }} />
                 </div>
-                <p style={{ fontSize: 13, color: '#666' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                   Downloading table {importProgress.currentTable} ({importProgress.current}/{importProgress.total})
                 </p>
               </div>
             ) : null}
             <div style={{ marginTop: 20, marginBottom: 10 }}>
-            <h4 style={{ margin: 0, color: '#333' }}>Tables selection</h4>
+            <h4 style={{ margin: 0, color: 'var(--text)' }}>Tables selection</h4>
             </div>
             <div style={{ marginBottom: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
-                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}
+                style={btnStyle('var(--text-muted)')}
                 onClick={() => setSelectedTables(availableTables)}
                 disabled={!availableTables.length}
               >
                 Select All
               </button>
               <button
-                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}
+                style={btnStyle('var(--text-muted)')}
                 onClick={() => setSelectedTables([])}
                 disabled={!selectedTables.length}
               >
                 Deselect All
               </button>
               <button
-  style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, background: '#e3f2fd', border: '1px solid #2196f3' }}
-  onClick={buildAdditionalInfos}
-  disabled={!selectedRealm || importLoading}
->
-  Build additional infos
-</button>
+                  style={btnStyle('var(--accent)')}
+                  onClick={buildAdditionalInfos}
+                  disabled={!selectedRealm || importLoading}
+              >
+                Build additional infos
+              </button>
             </div>
             {availableTables.map((tableName) => (
               <label key={tableName} style={{ display: 'block', marginBottom: 6 }}>
@@ -105,26 +107,26 @@ export default function ImportSection({ ctx }) {
 
             {statsLoading ? (
               <div style={{ marginTop: 10 }}>
-                <p style={{ fontSize: 13, color: '#666' }}>Downloading user statistics...</p>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Downloading user statistics...</p>
               </div>
             ) : null}
 
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || statsLoading} onClick={importStatistics}>Download Statistics</button>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || exportLoading} onClick={exportStatisticsTxt}>Export Statistics TXT</button>
-              <button style={{ padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm || importTxtLoading} onClick={importStatisticsTxt}>Import Statistics TXT</button>
+              <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || statsLoading} onClick={importStatistics}>Download Statistics</button>
+              <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || exportLoading} onClick={exportStatisticsTxt}>Export Statistics TXT</button>
+              <button style={btnStyle('var(--text-muted)')} disabled={!selectedRealm || importTxtLoading} onClick={importStatisticsTxt}>Import Statistics TXT</button>
             </div>
 
-            <div style={{ marginTop: 16, borderTop: '1px solid #ddd', paddingTop: 12 }}>
+            <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
               <h4 style={{ marginBottom: 8 }}>Downloaded statistics batches</h4>
-              <button style={{ marginBottom: 8, padding: '6px 12px', cursor: 'pointer' }} disabled={!selectedRealm} onClick={loadAggregatedStats}>Refresh list</button>
+              <button style={btnStyle('var(--text-muted)')} disabled={!selectedRealm} onClick={loadAggregatedStats}>Refresh list</button>
               {aggregatedStats.length === 0 ? (
-                <p style={{ color: '#666', fontSize: 13 }}>No statistics downloaded yet.</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No statistics downloaded yet.</p>
               ) : (
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #ddd', borderRadius: 4 }}>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
-                      <tr style={{ background: '#f0f0f0' }}>
+                      <tr style={{ background: 'var(--bg-subtle)' }}>
                         <th style={{ padding: '4px 8px', textAlign: 'left' }}>Select</th>
                         <th style={{ padding: '4px 8px', textAlign: 'left' }}>Period</th>
                         <th style={{ padding: '4px 8px', textAlign: 'left' }}>Date</th>
@@ -133,7 +135,7 @@ export default function ImportSection({ ctx }) {
                     </thead>
                     <tbody>
                       {aggregatedStats.map((stat, idx) => (
-                        <tr key={idx} style={{ background: selectedStatsBatch === stat ? '#e3f2fd' : (idx % 2 === 0 ? '#fff' : '#f9f9f9') }}>
+                        <tr key={idx} style={{ background: selectedStatsBatch === stat ? 'var(--info-bg)' : (idx % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)') }}>
                           <td style={{ padding: '4px 8px' }}>
                             <input type="radio" name="statsBatch" checked={selectedStatsBatch === stat} onChange={() => setSelectedStatsBatch(stat)} />
                           </td>
@@ -148,7 +150,7 @@ export default function ImportSection({ ctx }) {
               )}
               {selectedStatsBatch && (
                 <button
-                  style={{ marginTop: 8, padding: '6px 12px', cursor: 'pointer', background: '#ffebee', border: '1px solid #c62828', color: '#c62828' }}
+                  style={{ marginTop: 8, padding: '6px 12px', cursor: 'pointer', background: 'var(--danger-bg)', border: '1px solid var(--danger)', color: 'var(--danger)' }}
                   onClick={deleteSelectedStatsBatch}
                 >
                   Delete selected batch ({selectedStatsBatch.row_count} rows)
@@ -168,13 +170,13 @@ export default function ImportSection({ ctx }) {
                 <option value="01-USER-STATISTICS">01-USER-STATISTICS</option>
               </optgroup>
             </select>
-            <div>
-              <button style={{ marginTop: 8, padding: '8px 12px', cursor: 'pointer' }} disabled={!selectedRealm} onClick={() => loadImportedTableRows(0)}>Show data from local DB</button>
+            <div style={{ marginTop: 16 }}>
+              <button style={btnStyle('var(--text-muted)')} disabled={!selectedRealm} onClick={() => loadImportedTableRows(0)}>Show data from local DB</button>
             </div>
-            {displayError ? <p style={{ color: 'crimson' }}>{displayError}</p> : null}
+            {displayError ? <p style={{ color: 'var(--danger)' }}>{displayError}</p> : null}
             {displayRows.length > 0 && tableHeaders.length > 0 ? (
               <div style={{ marginTop: 10 }}>
-                <p style={{ color: '#666', marginBottom: 6 }}>
+                <p style={{ color: 'var(--text-muted)', marginBottom: 6 }}>
                   Showing {displayPage * PAGE_SIZE + 1}-{Math.min((displayPage + 1) * PAGE_SIZE, displayTotal)} of {displayTotal} rows
                 </p>
                 <div style={{ marginBottom: 8 }}>
@@ -188,7 +190,7 @@ export default function ImportSection({ ctx }) {
                   <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
                     <thead>
                       <tr>
-                        {tableHeaders.map((h) => <th key={h} style={{ border: '1px solid #ddd', padding: '4px 8px', background: '#f0f0f0', textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0 }}>{h}</th>)}
+                        {tableHeaders.map((h) => <th key={h} style={{ border: '1px solid var(--border)', padding: '4px 8px', background: 'var(--bg-subtle)', textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0 }}>{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -196,8 +198,8 @@ export default function ImportSection({ ctx }) {
                         const raw = rowObj?.row_data;
                         const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
                         return (
-                          <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                            {tableHeaders.map((h) => <td key={h} style={{ border: '1px solid #ddd', padding: '4px 8px', whiteSpace: 'nowrap' }}>{String(data[h] ?? '')}</td>)}
+                          <tr key={idx} style={{ background: idx % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)' }}>
+                            {tableHeaders.map((h) => <td key={h} style={{ border: '1px solid var(--border)', padding: '4px 8px', whiteSpace: 'nowrap' }}>{String(data[h] ?? '')}</td>)}
                           </tr>
                         );
                       })}
@@ -214,4 +216,3 @@ export default function ImportSection({ ctx }) {
     );
 
 }
-

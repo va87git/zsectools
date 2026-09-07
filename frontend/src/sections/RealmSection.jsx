@@ -9,6 +9,8 @@ export default function RealmSection({ ctx }) {
   setSapRealmInfo, setSelectedRealm, updateForm
   } = ctx;
 
+  const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
+
       return (
         <>
           <h1>SAP Connection Realms</h1>
@@ -16,11 +18,11 @@ export default function RealmSection({ ctx }) {
 
 
           <div style={panelStyle}>
-            <div style={{ marginBottom: 12 }}>
-              <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={loadRealmList}>Refresh Realm List</button>
-              <button style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }} onClick={saveRealm}>Save / Update Realm</button>
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button style={btnStyle('var(--text-muted)')} onClick={loadRealmList}>Refresh Realm List</button>
+              <button style={btnStyle('var(--success)')} onClick={saveRealm}>Save / Update Realm</button>
               <button
-                style={{ marginRight: 8, padding: '8px 12px', cursor: 'pointer' }}
+                style={btnStyle('var(--accent)')}
                 disabled={!selectedRealm && !form.realm}
                 onClick={runSapCheck}
               >
@@ -28,16 +30,16 @@ export default function RealmSection({ ctx }) {
               </button>
             </div>
 
-            {sapRealmError ? <p style={{ color: 'crimson' }}>{sapRealmError}</p> : null}
-            {sapRealmInfo ? <p style={{ color: 'green' }}>{sapRealmInfo}</p> : null}
+            {sapRealmError ? <p style={{ color: 'var(--danger)' }}>{sapRealmError}</p> : null}
+            {sapRealmInfo ? <p style={{ color: 'var(--success)' }}>{sapRealmInfo}</p> : null}
 
             {/* RFCPING result */}
             {sapHealth?.ok ? (
-              <p style={{ color: 'green' }}>
+              <p style={{ color: 'var(--success)' }}>
                 RFCPING OK — {sapHealth.latencyMs}ms — {sapHealth.destination?.ashost}/{sapHealth.destination?.client}
               </p>
             ) : errors?.sap ? (
-              <p style={{ color: 'crimson' }}>
+              <p style={{ color: 'var(--danger)' }}>
                 RFCPING Failed: {typeof errors.sap === 'string' ? errors.sap : JSON.stringify(errors.sap)}
               </p>
             ) : null}
@@ -65,11 +67,11 @@ export default function RealmSection({ ctx }) {
             {realms.length === 0 ? <p>No saved realms loaded.</p> : (
               <ul>
                 {realms.map((item) => (
-                  <li key={item.realm} style={{ marginBottom: '8px' }}>
-                    <button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => loadRealm(item.realm)}>Select</button>
+                  <li key={item.realm} style={{ marginBottom: '8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button style={btnStyle('var(--success)')} onClick={() => loadRealm(item.realm)}>Select</button>
                     {/*<button style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => setSelectedRealm(item.realm)}>Select</button>*/}
                     <button
-                      style={{ marginRight: 8, cursor: 'pointer', color: 'crimson', border: '1px solid crimson' }}
+                      style={btnStyle('var(--danger)')}
                       onClick={async () => {
                         if (!confirm(`Delete realm "${item.realm}"? This cannot be undone.`)) return;
                         try {
@@ -92,4 +94,3 @@ export default function RealmSection({ ctx }) {
       );
 
 }
-

@@ -18,9 +18,9 @@ export default function SodSection({ ctx }) {
   sodRulesets, sodRulesetsLoading
   } = ctx;
 
-    const panelStyle = { background: 'white', border: '1px solid #ddd', borderRadius: 8, padding: 24, marginBottom: 24 };
-    const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: '#555' };
-    const inputStyle = { padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+    const panelStyle = { background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, marginBottom: 24 };
+    const labelStyle = { display: 'block', fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: 'var(--text-muted)' };
+    const inputStyle = { padding: '6px 10px', border: '1px solid var(--border-strong)', borderRadius: 4, fontSize: 13, width: '100%', boxSizing: 'border-box' };
     const btnStyle = (color) => ({ padding: '6px 16px', background: color, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
 
     const handleExportResults = () => {
@@ -69,7 +69,7 @@ export default function SodSection({ ctx }) {
     return (
       <div style={{ maxWidth: 1300 }}>
         <h1>SOD &amp; Audit</h1>
-        <p style={{ color: '#666', marginBottom: 24 }}>Segregation of Duties analysis and audit tools.</p>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>Segregation of Duties analysis and audit tools.</p>
 
         <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
           <div style={{ flex: 1, minWidth: 0, maxWidth: 900 }}>
@@ -94,63 +94,63 @@ export default function SodSection({ ctx }) {
               </select>
             </div>
             <button
-              style={btnStyle('#555')}
+              style={btnStyle('var(--text-muted)')}
               onClick={importSodTables}
               disabled={sodImportLoading}
             >{sodImportLoading ? 'Importing...' : 'Import'}</button>
             <button
-              style={btnStyle('#1a73e8')}
+              style={btnStyle('var(--accent)')}
               onClick={exportSodTables}
               disabled={sodExportLoading || !sodRuleset}
             >{sodExportLoading ? 'Exporting...' : 'Export'}</button>
             <button
-              style={btnStyle('#c62828')}
+              style={btnStyle('var(--danger)')}
               onClick={deleteSodRulesetAction}
               disabled={sodDeleteLoading || !sodRuleset}
             >Delete Ruleset</button>
             <button
-              style={btnStyle('#7b1fa2')}
+              style={btnStyle('var(--purple)')}
               onClick={deleteAllSodAction}
               disabled={sodDeleteLoading}
             >Delete SOD (All)</button>
           </div>
           {sodImportLoading && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ background: '#eee', borderRadius: 4, overflow: 'hidden', height: 8 }}>
+              <div style={{ background: 'var(--accent-bg)', borderRadius: 4, overflow: 'hidden', height: 8 }}>
                 <div style={{
-                  background: '#1a73e8',
+                  background: 'var(--accent)',
                   height: 8,
                   width: `${sodImportProgress.total > 0 ? (sodImportProgress.current / sodImportProgress.total) * 100 : 0}%`,
                   transition: 'width 0.2s ease'
                 }} />
               </div>
-              <p style={{ fontSize: 12, color: '#666', marginTop: 4, marginBottom: 0 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 0 }}>
                 Importing file {sodImportProgress.current}/{sodImportProgress.total}
               </p>
             </div>
           )}
           {sodImportMsg && (
-            <p style={{ color: 'green', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodImportMsg}</p>
+            <p style={{ color: 'var(--success)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodImportMsg}</p>
           )}
           {sodImportErr && (
-            <p style={{ color: 'crimson', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodImportErr}</p>
+            <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodImportErr}</p>
           )}
           {sodExportMsg && (
-            <p style={{ color: 'green', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodExportMsg}</p>
+            <p style={{ color: 'var(--success)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodExportMsg}</p>
           )}
           {sodExportErr && (
-            <p style={{ color: 'crimson', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodExportErr}</p>
+            <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodExportErr}</p>
           )}
           {sodDeleteMsg && (
-            <p style={{ color: 'green', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodDeleteMsg}</p>
+            <p style={{ color: 'var(--success)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodDeleteMsg}</p>
           )}
           {sodDeleteErr && (
-            <p style={{ color: 'crimson', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodDeleteErr}</p>
+            <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodDeleteErr}</p>
           )}
           {sodMissingTables.length > 0 && (
-            <div style={{ marginTop: 12, padding: 10, background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: 4 }}>
-              <strong style={{ fontSize: 13, color: '#e65100' }}>Missing tables/files:</strong>
-              <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: 12, color: '#e65100' }}>
+            <div style={{ marginTop: 12, padding: 10, background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', borderRadius: 4 }}>
+              <strong style={{ fontSize: 13, color: 'var(--warn-text)' }}>Missing tables/files:</strong>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: 12, color: 'var(--warn-text)' }}>
                 {sodMissingTables.map(t => <li key={t}>{t}</li>)}
               </ul>
             </div>
@@ -183,7 +183,7 @@ export default function SodSection({ ctx }) {
               />
             </div>
             <button
-              style={btnStyle('#2e7d32')}
+              style={btnStyle('var(--success)')}
               onClick={addSodElement}
               disabled={sodAddElementLoading}
             >{sodAddElementLoading ? 'Adding...' : 'Add element'}</button>
@@ -206,7 +206,7 @@ export default function SodSection({ ctx }) {
                   style={{ display: 'none' }}
                 />
                 <button
-                  style={btnStyle('#555')}
+                  style={btnStyle('var(--text-muted)')}
                   onClick={() => sodElementsFileInputRef.current && sodElementsFileInputRef.current.click()}
                   disabled={sodImportElementsLoading}
                 >{sodImportElementsLoading ? 'Importing...' : 'Import elements'}</button>
@@ -226,37 +226,37 @@ export default function SodSection({ ctx }) {
             <div style={{ flex: 2, alignSelf: 'center' }}>
               {sodAnalysisRunning && sodAnalysisProgress.total > 0 && (
                 <div>
-                  <div style={{ background: '#eee', borderRadius: 4, overflow: 'hidden', height: 8 }}>
+                  <div style={{ background: 'var(--accent-bg)', borderRadius: 4, overflow: 'hidden', height: 8 }}>
                     <div style={{
-                      background: '#1a73e8',
+                      background: 'var(--accent)',
                       height: 8,
                       width: `${(sodAnalysisProgress.current / sodAnalysisProgress.total) * 100}%`,
                       transition: 'width 0.2s ease'
                     }} />
                   </div>
-                  <p style={{ fontSize: 11, color: '#666', margin: '4px 0 0', textAlign: 'center' }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0', textAlign: 'center' }}>
                     {sodAnalysisProgress.current}/{sodAnalysisProgress.total} — {sodAnalysisProgress.elementId}
                   </p>
                 </div>
               )}
             </div>
             <button
-              style={btnStyle('#1a73e8')}
+              style={btnStyle('var(--accent)')}
               onClick={runSodAnalysisAction}
               disabled={sodAnalysisRunning}
             >{sodAnalysisRunning ? 'Running...' : 'Run Analysis'}</button>
           </div>
           {sodAddElementMsg && (
-            <p style={{ color: 'green', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAddElementMsg}</p>
+            <p style={{ color: 'var(--success)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAddElementMsg}</p>
           )}
           {sodAddElementErr && (
-            <p style={{ color: 'crimson', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAddElementErr}</p>
+            <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAddElementErr}</p>
           )}
           {sodAnalysisMsg && (
-            <p style={{ color: 'green', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAnalysisMsg}</p>
+            <p style={{ color: 'var(--success)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAnalysisMsg}</p>
           )}
           {sodAnalysisErr && (
-            <p style={{ color: 'crimson', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAnalysisErr}</p>
+            <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12, marginBottom: 0 }}>{sodAnalysisErr}</p>
           )}
         </div>
 
@@ -266,41 +266,41 @@ export default function SodSection({ ctx }) {
             <h2 style={{ margin: 0, fontSize: 16 }}>Results Preview &amp; Export</h2>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
-                style={btnStyle('#555')}
+                style={btnStyle('var(--text-muted)')}
                 onClick={() => loadSodRaResults(0)}
               >Refresh</button>
               <button
-                style={btnStyle('#2e7d32')}
+                style={btnStyle('var(--success)')}
                 onClick={exportSodResults}
                 disabled={sodRaResultsTotal === 0}
               >Export results</button>
             </div>
           </div>
           {sodAnalysisRunning ? (
-            <p style={{ color: '#888', fontSize: 13 }}>Running analysis...</p>
+            <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Running analysis...</p>
           ) : sodRaResults.length > 0 ? (
             <>
               <div style={{ overflowX: 'auto', maxHeight: 340, overflowY: 'auto' }}>
                 <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ background: '#f5f5f5' }}>
+                    <tr style={{ background: 'var(--bg-subtle)' }}>
                       {Object.keys(sodRaResults[0]).map(k => (
-                        <th key={k} style={{ padding: '5px 8px', textAlign: 'left', borderBottom: '1px solid #ddd', whiteSpace: 'nowrap' }}>{k}</th>
+                        <th key={k} style={{ padding: '5px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{k}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {sodRaResults.map((row, i) => (
-                      <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                      <tr key={i} style={{ background: i % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)' }}>
                         {Object.values(row).map((v, j) => (
-                          <td key={j} style={{ padding: '4px 8px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>{v === null || v === undefined ? '' : String(v)}</td>
+                          <td key={j} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{v === null || v === undefined ? '' : String(v)}</td>
                         ))}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div style={{ marginTop: 10, fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>Showing {sodRaResultsPage * PAGE_SIZE + 1}-{Math.min((sodRaResultsPage + 1) * PAGE_SIZE, sodRaResultsTotal)} of {sodRaResultsTotal}</span>
                 <span>
                   <button onClick={() => loadSodRaResults(0)} disabled={sodRaResultsPage === 0} style={{ marginRight: 4 }}>First</button>
@@ -311,7 +311,7 @@ export default function SodSection({ ctx }) {
               </div>
             </>
           ) : (
-            <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No results to display. Run the analysis to see results.</p>
+            <p style={{ color: 'var(--text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No results to display. Run the analysis to see results.</p>
           )}
         </div>
           </div>
@@ -322,42 +322,42 @@ export default function SodSection({ ctx }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: 16 }}>Selected elements</h2>
                 <button
-                  style={btnStyle('#c62828')}
+                  style={btnStyle('var(--danger)')}
                   onClick={clearSodElements}
                   disabled={sodClearLoading || sodRaElementsTotal === 0}
                 >Clear elements</button>
               </div>
               {sodClearMsg && (
-                <p style={{ color: 'green', fontSize: 12, marginBottom: 8 }}>{sodClearMsg}</p>
+                <p style={{ color: 'var(--success)', fontSize: 12, marginBottom: 8 }}>{sodClearMsg}</p>
               )}
               {sodClearErr && (
-                <p style={{ color: 'crimson', fontSize: 12, marginBottom: 8 }}>{sodClearErr}</p>
+                <p style={{ color: 'var(--danger)', fontSize: 12, marginBottom: 8 }}>{sodClearErr}</p>
               )}
               {sodRaElementsLoading ? (
-                <p style={{ color: '#888', fontSize: 13 }}>Loading...</p>
+                <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Loading...</p>
               ) : sodRaElements.length > 0 ? (
                 <>
                   <div style={{ overflowX: 'auto', maxHeight: 440, overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ background: '#f5f5f5' }}>
-                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Type</th>
-                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Element ID</th>
-                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Description</th>
+                        <tr style={{ background: 'var(--bg-subtle)' }}>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Type</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Element ID</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Description</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sodRaElements.map((el, i) => (
-                          <tr key={el.elementid} style={{ background: i % 2 === 0 ? 'white' : '#fafafa' }}>
-                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>{el.elementtype}</td>
-                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>{el.elementid}</td>
-                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #eee' }}>{el.elementdescription}</td>
+                          <tr key={el.elementid} style={{ background: i % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)' }}>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{el.elementtype}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{el.elementid}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{el.elementdescription}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ marginTop: 10, fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>
                       Showing {sodRaElementsPage * PAGE_SIZE + 1}-{Math.min((sodRaElementsPage + 1) * PAGE_SIZE, sodRaElementsTotal)} of {sodRaElementsTotal}
                     </span>
@@ -370,7 +370,7 @@ export default function SodSection({ ctx }) {
                   </div>
                 </>
               ) : (
-                <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No elements selected yet.</p>
+                <p style={{ color: 'var(--text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No elements selected yet.</p>
               )}
             </div>
           </div>

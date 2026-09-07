@@ -34,7 +34,8 @@ const layoutStyle = {
 };
 
 const sideNavStyle = {
-  borderRight: '1px solid #ddd',
+  borderRight: '1px solid var(--border)',
+  background: 'var(--bg-subtle)',
   padding: 16,
   display: 'flex',
   flexDirection: 'column',
@@ -244,8 +245,8 @@ export default function App() {
       padding: sidebarCollapsed ? '8px 0' : '8px 12px',
       cursor: 'pointer',
       textAlign: 'left',
-      background: active ? '#eee' : 'transparent',
-      border: '1px solid #ccc',
+      background: active ? 'var(--accent-bg)' : 'transparent',
+      border: '1px solid var(--border-strong)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
@@ -2013,7 +2014,7 @@ async function executeRfcBatch() {
     setFn(next);
   }
 
-  // ── contesti per le sezioni: dipendenze esplicite di ciascuna vista ──
+  // ── contest for sections: explicit dependencies for each view ──
   const settingsCtx = {
     appHealth, checkForUpdates, dbHealth, errors,
     loadSdkPath, runCheck, runSapCheck, runSdkDiagnostics,
@@ -2189,14 +2190,14 @@ async function executeRfcBatch() {
           </div>
 
           {!sidebarCollapsed && (
-            <div style={{ padding: '12px', borderTop: '1px solid #ddd', fontSize: '14px' }}>
+            <div style={{ padding: '12px', borderTop: '1px solid var(--border)', fontSize: '14px' }}>
               <div style={{ marginBottom: '8px' }}>
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>Active SAP Realm:</label>
-                <div style={{ padding: '4px 8px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px' }}>
-                  {selectedRealm || <span style={{ color: '#999' }}>None selected</span>}
+                <div style={{ padding: '4px 8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                  {selectedRealm || <span style={{ color: 'var(--text-faint)' }}>None selected</span>}
                 </div>
               </div>
-              <div style={{ color: '#666', fontSize: '12px', marginTop: '8px' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '8px' }}>
                 {selectedRealm ? (
                   <span>Manage realms in <strong>SAP Realms</strong> section</span>
                 ) : (

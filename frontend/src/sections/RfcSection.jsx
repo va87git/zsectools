@@ -55,8 +55,8 @@ export default function RfcSection({ ctx }) {
       <p>Execute massive RFC commands for SAP user and role management.</p>
 
       <div style={panelStyle}>
-        {rfcError ? <p style={{ color: 'crimson' }}>{rfcError}</p> : null}
-        {rfcMsg ? <p style={{ color: 'green' }}>{rfcMsg}</p> : null}
+        {rfcError ? <p style={{ color: 'var(--danger)' }}>{rfcError}</p> : null}
+        {rfcMsg ? <p style={{ color: 'var(--success)' }}>{rfcMsg}</p> : null}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 1200 }}>
@@ -79,7 +79,7 @@ export default function RfcSection({ ctx }) {
           </select>
 
           {rfcSchema && (
-            <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
+            <div style={{ background: 'var(--bg-subtle)', padding: 12, borderRadius: 4, marginBottom: 12 }}>
               <p><strong>Required Fields:</strong> {rfcSchema.requiredFields.join(', ')}</p>
               {rfcSchema.optionalFields.length > 0 && (
                 <p><strong>Optional Fields:</strong> {rfcSchema.optionalFields.join(', ')}</p>
@@ -88,26 +88,26 @@ export default function RfcSection({ ctx }) {
           )}
 
           {rfcSchema && rfcSchema.examples && (
-                      <div style={{ background: '#eef6ff', padding: 12, borderRadius: 4, marginBottom: 12, border: '1px solid #cfe3ff' }}>
+                      <div style={{ background: 'var(--info-bg)', padding: 12, borderRadius: 4, marginBottom: 12, border: '1px solid var(--info-border)' }}>
                         <p style={{ marginTop: 0 }}><strong>Examples</strong></p>
                         {rfcSchema.examples.note && (
-                          <p style={{ fontSize: 12, color: '#555', whiteSpace: 'pre-line' }}>{rfcSchema.examples.note}</p>
+                          <p style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'pre-line' }}>{rfcSchema.examples.note}</p>
                         )}
                         {Array.isArray(rfcSchema.examples.header) && Array.isArray(rfcSchema.examples.rows) && (
                           <div style={{ overflowX: 'auto' }}>
                             <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
                               <thead>
-                                <tr style={{ background: '#dbeafe' }}>
+                                <tr style={{ background: 'var(--info-border)' }}>
                                   {rfcSchema.examples.header.map((h) => (
-                                    <th key={h} style={{ border: '1px solid #cbd5e1', padding: '4px 8px', textAlign: 'left' }}>{h}</th>
+                                    <th key={h} style={{ border: '1px solid var(--info-border)', padding: '4px 8px', textAlign: 'left' }}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
                                 {rfcSchema.examples.rows.map((row, idx) => (
-                                  <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f4f9ff' }}>
+                                  <tr key={idx} style={{ background: idx % 2 === 0 ? 'var(--bg-elevated)' : 'var(--info-bg)' }}>
                                     {row.map((val, vidx) => (
-                                      <td key={vidx} style={{ border: '1px solid #cbd5e1', padding: '4px 8px' }}>{val}</td>
+                                      <td key={vidx} style={{ border: '1px solid var(--info-border)', padding: '4px 8px' }}>{val}</td>
                                     ))}
                                   </tr>
                                 ))}
@@ -127,7 +127,8 @@ export default function RfcSection({ ctx }) {
             disabled={!selectedRfc}
             style={{
             marginBottom: 12,
-            width: '100px',
+            marginRight: 12,
+            width: '70px',
             overflow: 'hidden',
             color: 'transparent'   // Makes the remaining text transparent for safety across browsers
             }}
@@ -139,8 +140,8 @@ export default function RfcSection({ ctx }) {
             style={{
               padding: '8px 12px',
               cursor: 'pointer',
-              //gray background (#ccc) if disabled, otherwise green (#4caf50)
-              background: (!selectedRealm || !selectedRfc || rfcPreviewRows.length === 0 || rfcExecuting) ? '#ccc' : '#4caf50',
+              // muted background if disabled, otherwise success color
+              background: (!selectedRealm || !selectedRfc || rfcPreviewRows.length === 0 || rfcExecuting) ? 'var(--border-strong)' : 'var(--success)',
               color: 'white',
               border: 'none',
               borderRadius: '4px'
@@ -158,9 +159,9 @@ export default function RfcSection({ ctx }) {
           style={{
             padding: '6px 10px',
             cursor: 'pointer',
-            background: '#f0f0f0',
-            color: '#333',
-            border: '1px solid #ccc',
+            background: 'var(--bg-subtle)',
+            color: 'var(--text)',
+            border: '1px solid var(--border-strong)',
             borderRadius: '4px',
             fontSize: '12px',
             width: '100%',
@@ -171,15 +172,15 @@ export default function RfcSection({ ctx }) {
         </button>
           {rfcPreviewRows.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <p style={{ color: '#666', fontSize: 13 }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                 Rows to execute: {rfcPreviewRows.length} {rfcSchema && rfcSchema.bapi ? `(${rfcSchema.bapi})` : `(${selectedRfc})`}
               </p>
-              <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #ddd', borderRadius: 4 }}>
+              <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ background: '#f0f0f0' }}>
+                    <tr style={{ background: 'var(--bg-subtle)' }}>
                       {Object.keys(rfcPreviewRows[0] || {}).map(key => (
-                        <th key={key} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+                        <th key={key} style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                           {key}
                         </th>
                       ))}
@@ -187,9 +188,9 @@ export default function RfcSection({ ctx }) {
                   </thead>
                   <tbody>
                     {rfcPreviewRows.map((row, idx) => (
-                      <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                      <tr key={idx} style={{ background: idx % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)' }}>
                         {Object.values(row).map((val, vidx) => (
-                          <td key={vidx} style={{ padding: '4px 8px', borderBottom: '1px solid #ddd' }}>
+                          <td key={vidx} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
                             {val}
                           </td>
                         ))}
@@ -203,15 +204,15 @@ export default function RfcSection({ ctx }) {
 
           {rfcExecuting && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{ background: '#e0e0e0', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ background: 'var(--border-strong)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
                 <div style={{
-                  background: '#4caf50',
+                  background: 'var(--success)',
                   height: 20,
                   width: `${(rfcProgress.current / rfcProgress.total) * 100}%`,
                   transition: 'width 0.3s ease'
                 }} />
               </div>
-              <p style={{ fontSize: 13, color: '#666' }}>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                 Executing {rfcProgress.current}/{rfcProgress.total}
               </p>
             </div>
@@ -222,21 +223,21 @@ export default function RfcSection({ ctx }) {
     <h4>Results</h4>
     <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
       <thead>
-        <tr style={{ background: '#f0f0f0' }}>
+        <tr style={{ background: 'var(--bg-subtle)' }}>
           <th style={{ padding: '4px', textAlign: 'left' }}>Status</th>
           <th style={{ padding: '4px', textAlign: 'left' }}>Message</th>
         </tr>
       </thead>
       <tbody>
         {displayResults.map((res, idx) => (
-          <tr key={idx} style={{ background: res.status === 'success' ? '#e8f5e9' : '#ffebee' }}>
-            <td style={{ padding: '4px', color: res.status === 'success' ? 'green' : 'crimson', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+          <tr key={idx} style={{ background: res.status === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)' }}>
+            <td style={{ padding: '4px', color: res.status === 'success' ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
               {res.status}
             </td>
             <td style={{ padding: '4px', fontSize: 10 }}>
               {res.status === 'success'
-                ? <>{res.message} <span style={{ color: '#888' }}>({res.count})</span></>
-                : <>{res.rowIndex != null ? <span style={{ color: '#888', marginRight: 4 }}>[row {res.rowIndex}]</span> : null}{res.message}</>
+                ? <>{res.message} <span style={{ color: 'var(--text-faint)' }}>({res.count})</span></>
+                : <>{res.rowIndex != null ? <span style={{ color: 'var(--text-faint)', marginRight: 4 }}>[row {res.rowIndex}]</span> : null}{res.message}</>
               }
             </td>
           </tr>
@@ -252,4 +253,3 @@ export default function RfcSection({ ctx }) {
   );
 
 }
-

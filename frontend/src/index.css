@@ -1,0 +1,109 @@
+:root {
+  --bg: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f5f5f5;
+  --text: #1a1a1a;
+  --text-muted: #666666;
+  --text-faint: #888888;
+  --border: #dddddd;
+  --border-strong: #cccccc;
+  --accent: #1976d2;
+  --accent-bg: #eeeeee;
+  --link: #2563eb;
+  --input-bg: #ffffff;
+  --danger: crimson;
+  --danger-bg: #ffebee;
+  --success: green;
+  --success-bg: #e8f5e9;
+  --warn-bg: #fff8e1;
+  --warn-border: #ffe082;
+  --warn-text: #b78103;
+  --info-bg: #e3f2fd;
+  --info-border: #cfe3ff;
+  --purple: #7b1fa2;
+  --pink-bg: #fce4ec;
+  --shadow: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='dark'] {
+  --bg: #121212;
+  --bg-elevated: #1e1e1e;
+  --bg-subtle: #262626;
+  --text: #e8e8e8;
+  --text-muted: #a8a8a8;
+  --text-faint: #8a8a8a;
+  --border: #3a3a3a;
+  --border-strong: #4a4a4a;
+  --accent: #5b9bd5;
+  --accent-bg: #2a2a2a;
+  --link: #7aa8ff;
+  --input-bg: #1e1e1e;
+  --danger: #ff6b6b;
+  --danger-bg: #4a1f1f;
+  --success: #57c25a;
+  --success-bg: #1b3a1e;
+  --warn-bg: #3a2f12;
+  --warn-border: #5c4a1a;
+  --warn-text: #e0b23d;
+  --info-bg: #16324a;
+  --info-border: #2c5a86;
+  --purple: #c07ee0;
+  --pink-bg: #4a2030;
+  --shadow: rgba(0, 0, 0, 0.6);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+a {
+  color: var(--link);
+}
+
+input, select, textarea {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
+button {
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font: inherit;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+table {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+pre, code {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 6px;
+}
