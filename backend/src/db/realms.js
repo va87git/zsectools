@@ -3,7 +3,7 @@ import { pool } from './client.js';
 // CRUD operations for SAP realms (sap_realms)
 export async function listSapRealms() {
   const result = await pool.query(`
-    SELECT realm, sap_user, sap_password, sap_ashost, sap_sysnr, sap_client, sap_sid, sap_language, sap_router, realm_reference_date, updated_at
+    SELECT realm, realm_description, sap_user, sap_password, sap_ashost, sap_sysnr, sap_client, sap_sid, sap_language, sap_router, realm_reference_date, updated_at
     FROM sap_realms
     ORDER BY realm ASC
   `);
