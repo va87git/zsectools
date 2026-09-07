@@ -155,7 +155,7 @@ If you don't want to launch `run.bat` manually every time, you can install ZSecT
 ## Known Issues / Missing Features
 
 - **Translations are not parameterized**: the UI language is hard-coded to English.
-- **The user interface is very basic**, with no theming support. Dark mode support is planned for a future release.
+- **The user interface is very basic**, there's no need for major changes right now.
 - **Windows needs App restart when SAP SDK path changed**, this is because of env variables handling in Windows.
 
 ## SOD Analysis Accuracy
