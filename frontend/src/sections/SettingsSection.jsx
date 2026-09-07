@@ -1,10 +1,13 @@
 import { panelStyle } from '../styles.js';
 import StatusBlock from '../components/StatusBlock.jsx';
 import brandBanner from '../../assets/brand/zsectools-banner-v2.png';
+import { useTheme } from '../theme.jsx';
 
 /* global __APP_VERSION__ */
 
 export default function SettingsSection({ ctx }) {
+  const { theme, toggleTheme } = useTheme();
+  const isDarkTheme = theme === 'dark';
   function renderHealthSection() {
     return (
       <>
@@ -22,7 +25,7 @@ export default function SettingsSection({ ctx }) {
         {sapHealth?.ok ? (
               <div style={panelStyle}>
                 <h3>SAP RFC Health</h3>
-                <p style={{ color: 'green' }}>RFCPING OK — {sapHealth.latencyMs}ms — {sapHealth.destination?.ashost}/{sapHealth.destination?.client}</p>
+                <p style={{ color: 'var(--success)' }}>RFCPING OK — {sapHealth.latencyMs}ms — {sapHealth.destination?.ashost}/{sapHealth.destination?.client}</p>
               </div>
             ) : (
               <StatusBlock title="SAP RFC Health" data={sapHealth} error={errors.sap} />
@@ -48,9 +51,9 @@ export default function SettingsSection({ ctx }) {
             </button>
           </div>
 
-          {sdkPathError ? <p style={{ color: 'crimson' }}>{sdkPathError}</p> : null}
-          {sdkPathInfo ? <p style={{ color: 'green' }}>{sdkPathInfo}</p> : null}
-          {sdkDiagError ? <p style={{ color: 'crimson' }}>{sdkDiagError}</p> : null}
+          {sdkPathError ? <p style={{ color: 'var(--danger)' }}>{sdkPathError}</p> : null}
+          {sdkPathInfo ? <p style={{ color: 'var(--success)' }}>{sdkPathInfo}</p> : null}
+          {sdkDiagError ? <p style={{ color: 'var(--danger)' }}>{sdkDiagError}</p> : null}
           {sdkDiag ? <pre style={{ marginTop: 10, maxHeight: 260, overflow: 'auto' }}>{JSON.stringify(sdkDiag, null, 2)}</pre> : null}
         </div>
       </>
@@ -62,9 +65,48 @@ export default function SettingsSection({ ctx }) {
       <div style={{ maxWidth: 520 }}>
         <div style={panelStyle}>
           <h3 style={{ marginTop: 0 }}>Appearance</h3>
-          <p style={{ color: '#888', fontSize: 13 }}>
-            Theme settings will be available here (coming soon).
+          <p style={{ color: 'var(--text-faint)', fontSize: 13, marginBottom: 16 }}>
+            Choose between light and dark theme for the interface.
           </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontWeight: 'bold' }}>Dark theme</div>
+              <div style={{ color: 'var(--text-faint)', fontSize: 12, marginTop: 2 }}>
+                {isDarkTheme ? 'Enabled' : 'Disabled'}
+              </div>
+            </div>
+            <button
+              onClick={toggleTheme}
+              role="switch"
+              aria-checked={isDarkTheme}
+              aria-label="Toggle dark theme"
+              style={{
+                width: 52,
+                height: 28,
+                borderRadius: 999,
+                border: '1px solid var(--border-strong)',
+                background: isDarkTheme ? 'var(--accent)' : 'var(--bg-subtle)',
+                position: 'relative',
+                cursor: 'pointer',
+                padding: 0,
+                flexShrink: 0
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: isDarkTheme ? 26 : 2,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.15s ease',
+                  boxShadow: '0 1px 3px var(--shadow)'
+                }}
+              />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -85,7 +127,7 @@ export default function SettingsSection({ ctx }) {
           }}
         >
           {/* Section Header */}
-          <h4 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '600', color: '#111' }}>
+          <h4 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '600', color: 'var(--text)' }}>
             App Version
           </h4>
 
@@ -108,11 +150,11 @@ export default function SettingsSection({ ctx }) {
           </div>
 
           {/* Application Title & Description */}
-          <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', color: '#111' }}>
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', color: 'var(--text)' }}>
             ZSecTools
           </h3>
 
-          <p style={{ margin: '0 0 16px 0', color: '#666', fontSize: '14px' }}>
+          <p style={{ margin: '0 0 16px 0', color: 'var(--text-muted)', fontSize: '14px' }}>
             SAP Security & Authorization Suite
           </p>
 
@@ -120,13 +162,13 @@ export default function SettingsSection({ ctx }) {
           <span
             style={{
               display: 'inline-block',
-              backgroundColor: '#f0f4f8',
-              color: '#2563eb',
+              backgroundColor: 'var(--accent-bg)',
+              color: 'var(--link)',
               fontSize: '12px',
               fontWeight: '600',
               padding: '4px 12px',
               borderRadius: '16px',
-              border: '1px solid #dbeafe',
+              border: '1px solid var(--border)',
             }}
           >
             v{__APP_VERSION__}
@@ -146,44 +188,44 @@ export default function SettingsSection({ ctx }) {
           }}
         >
           {/* Section Header */}
-          <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#111' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: 'var(--text)' }}>
             License and Docs
           </h4>
 
           {/* License Info */}
-          <span style={{ fontSize: '13px', color: '#666' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             Released under{' '}
             <a
               href="https://github.com/va87git/zsectools/blob/main/LICENSE"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+              style={{ color: 'var(--link)', textDecoration: 'underline', fontWeight: '500' }}
             >
               MIT License, with No-Sale Clause
             </a>
           </span>
 
           {/* Repository Link */}
-          <span style={{ fontSize: '13px', color: '#666' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             GitHub:{' '}
             <a
               href="https://github.com/va87git/zsectools"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+              style={{ color: 'var(--link)', textDecoration: 'underline', fontWeight: '500' }}
             >
               ZSecTools
             </a>
           </span>
 
           {/* User Guide Link */}
-          <span style={{ fontSize: '13px', color: '#666' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             User Guide (found also in root folder):{' '}
             <a
               href="https://github.com/va87git/zsectools/blob/main/userguide.md"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: '500' }}
+              style={{ color: 'var(--link)', textDecoration: 'underline', fontWeight: '500' }}
             >
               userguide.md
             </a>
@@ -203,14 +245,14 @@ export default function SettingsSection({ ctx }) {
           </button>
 
           {updateError ? (
-            <p style={{ color: 'crimson', marginTop: 10 }}>{updateError}</p>
+            <p style={{ color: 'var(--danger)', marginTop: 10 }}>{updateError}</p>
           ) : null}
 
           {updateInfo ? (
             <div style={{ marginTop: 12 }}>
               {updateInfo.hasUpdate ? (
-                <div style={{ padding: 10, backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: 4 }}>
-                  <p style={{ margin: 0, fontWeight: 'bold', color: '#b78103' }}>
+                <div style={{ padding: 10, backgroundColor: 'var(--warn-bg)', border: '1px solid var(--warn-border)', borderRadius: 4 }}>
+                  <p style={{ margin: 0, fontWeight: 'bold', color: 'var(--warn-text)' }}>
                     🚀 A new version is available: v{updateInfo.latestVersion} (Current: v{updateInfo.currentVersion})
                   </p>
                   <p style={{ margin: '6px 0 0 0' }}>
@@ -220,7 +262,7 @@ export default function SettingsSection({ ctx }) {
                   </p>
                 </div>
               ) : (
-                <p style={{ color: 'green', margin: 0 }}>
+                <p style={{ color: 'var(--success)', margin: 0 }}>
                   ✓ You are running the latest version (v{updateInfo.currentVersion}).
                 </p>
               )}
@@ -243,20 +285,20 @@ export default function SettingsSection({ ctx }) {
     const tabBtn = (active) => ({
       padding: '8px 16px',
       border: 'none',
-      borderBottom: active ? '2px solid #1976d2' : '2px solid transparent',
+      borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
       background: 'transparent',
       cursor: 'pointer',
       fontWeight: active ? 'bold' : 'normal',
-      color: active ? '#1976d2' : '#555'
+      color: active ? 'var(--accent)' : 'var(--text-muted)'
     });
 
     return (
       <>
         <h1>Settings</h1>
-        <p style={{ marginTop: 0, color: '#666' }}>Application settings and diagnostics.</p>
+        <p style={{ marginTop: 0, color: 'var(--text-muted)' }}>Application settings and diagnostics.</p>
 
         {/* Internal tabs */}
-        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #ddd', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
           <button style={tabBtn(settingsTab === 'general')} onClick={() => setSettingsTab('general')}>
             General
           </button>

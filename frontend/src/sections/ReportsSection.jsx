@@ -1,7 +1,7 @@
 import { PAGE_SIZE } from '../constants.js';
 import { panelStyle } from '../styles.js';
 
-// catalogo report spostato da App.jsx (usato solo qui)
+// report list moved from App.jsx (used in this section only)
   const availableReports = [
     { id: 'USER01', name: 'USER01 - Users never logged on in the last XX days' },
     { id: 'USER02', name: 'USER02 - Active users with SAP_ALL and SAP_NEW' },
@@ -29,6 +29,8 @@ export default function ReportsSection({ ctx }) {
   setReportPattern, setReportRows, setReportTableName, setReportTotal,
   setSelectedReport
   } = ctx;
+
+  const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
 
     return (
       <>
@@ -94,7 +96,7 @@ export default function ReportsSection({ ctx }) {
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
-                  placeholder="es. ZAGRT%"
+                  placeholder="e.g. ZAGRT%"
                 />
               </>
             )}
@@ -113,7 +115,7 @@ export default function ReportsSection({ ctx }) {
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
-                  placeholder="es. ZAGRT%"
+                  placeholder="e.g. ZAGRT%"
                 />
               </>
             )}
@@ -132,7 +134,7 @@ export default function ReportsSection({ ctx }) {
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
-                  placeholder="es. ZAGRT%"
+                  placeholder="e.g. ZAGRT%"
                 />
               </>
             )}
@@ -151,13 +153,13 @@ export default function ReportsSection({ ctx }) {
                   value={reportPattern}
                   onChange={(e) => setReportPattern(e.target.value.toUpperCase())} //uppercase by default because it is a LIKE statement
                   style={{ width: '100%', marginBottom: 12 }}
-                  placeholder="es. ZAGRT%"
+                  placeholder="e.g. ZAGRT%"
                 />
               </>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               <button
-                style={{ padding: '8px 12px', cursor: 'pointer' }}
+                style={btnStyle('var(--accent)')}
                 disabled={!selectedRealm || !selectedReport}
                 onClick={executeReport}
               >
@@ -170,14 +172,7 @@ export default function ReportsSection({ ctx }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Report Results</h3>
               <button
-                style={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  background: '#4caf50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px'
-                }}
+                style={btnStyle('var(--success)')}
                 onClick={exportReport}
                 disabled={reportRows.length === 0}
               >
@@ -185,10 +180,10 @@ export default function ReportsSection({ ctx }) {
               </button>
             </div>
 
-            {reportError ? <p style={{ color: 'crimson' }}>{reportError}</p> : null}
+            {reportError ? <p style={{ color: 'var(--danger)' }}>{reportError}</p> : null}
             {reportRows.length > 0 && reportHeaders.length > 0 ? (
               <div style={{ marginTop: 10 }}>
-                <p style={{ color: '#666', marginBottom: 6 }}>
+                <p style={{ color: 'var(--text-muted)', marginBottom: 6 }}>
                   Showing {reportPage * PAGE_SIZE + 1}-{Math.min((reportPage + 1) * PAGE_SIZE, reportTotal)} of {reportTotal} rows
                 </p>
                 <div style={{ marginBottom: 8 }}>
@@ -202,7 +197,7 @@ export default function ReportsSection({ ctx }) {
                   <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
                     <thead>
                       <tr>
-                        {reportHeaders.map((h) => <th key={h} style={{ border: '1px solid #ddd', padding: '4px 8px', background: '#f0f0f0', textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0 }}>{h}</th>)}
+                        {reportHeaders.map((h) => <th key={h} style={{ border: '1px solid var(--border)', padding: '4px 8px', background: 'var(--bg-subtle)', textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0 }}>{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -210,8 +205,8 @@ export default function ReportsSection({ ctx }) {
                         const raw = rowObj?.row_data;
                         const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
                         return (
-                          <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                            {reportHeaders.map((h) => <td key={h} style={{ border: '1px solid #ddd', padding: '4px 8px', whiteSpace: 'nowrap' }}>{String(data[h] ?? '')}</td>)}
+                          <tr key={idx} style={{ background: idx % 2 === 0 ? 'var(--bg-elevated)' : 'var(--bg-subtle)' }}>
+                            {reportHeaders.map((h) => <td key={h} style={{ border: '1px solid var(--border)', padding: '4px 8px', whiteSpace: 'nowrap' }}>{String(data[h] ?? '')}</td>)}
                           </tr>
                         );
                       })}
@@ -228,4 +223,3 @@ export default function ReportsSection({ ctx }) {
     );
 
 }
-
