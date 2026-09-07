@@ -127,7 +127,8 @@ export default function RfcSection({ ctx }) {
             disabled={!selectedRfc}
             style={{
             marginBottom: 12,
-            width: '100px',
+            marginRight: 12,
+            width: '70px',
             overflow: 'hidden',
             color: 'transparent'   // Makes the remaining text transparent for safety across browsers
             }}
@@ -252,4 +253,3 @@ export default function RfcSection({ ctx }) {
   );
 
 }
-
