@@ -197,7 +197,7 @@ export default function SodSection({ ctx }) {
                 consider also invalid/locked users
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
-                <span style={labelStyle}>Upload CSV/TSV File</span>
+                <span style={labelStyle}>Upload CSV/TSV File -- 3 columns: elementtype(Users/Roles), elementid, elementdescription</span>
                 <input
                   ref={sodElementsFileInputRef}
                   type="file"
@@ -379,4 +379,3 @@ export default function SodSection({ ctx }) {
     );
 
 }
-

@@ -1475,7 +1475,7 @@ async function executeRfcBatch() {
       setSodAddElementErr(err.message);
     } finally {
       setSodImportElementsLoading(false);
-      e.target.value = ''; // reset per poter ricaricare lo stesso file
+      e.target.value = ''; // reset to reload same file.
     }
   }
 

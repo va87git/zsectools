@@ -103,10 +103,28 @@ export async function clearSodRaElements() {
    await pool.query(`ALTER TABLE sod_ra_elements ADD COLUMN IF NOT EXISTS elementtype TEXT`);
 
    const header = lines[0].split('\t').map(h => h.trim().toLowerCase());
-   const idxType = header.indexOf('elementtype');
-   const idxId = header.indexOf('elementid');
-   const idxDesc = header.indexOf('elementdescription');
-   if (idxId === -1) throw new Error('Missing required column: elementid');
+   // Changed from const to let to allow reassignment during fallback
+   let idxType = header.indexOf('elementtype');
+   let idxId = header.indexOf('elementid');
+   let idxDesc = header.indexOf('elementdescription');
+   //if (idxId === -1) throw new Error('Missing required column: elementid');
+
+   // FALLBACK: If the exact column names are not found in the header, fallback to default position indexs (0: Type, 1: ID, 2: Description)
+   if (idxType === -1) idxType = 0;
+   if (idxId === -1) idxId = 1;
+   if (idxDesc === -1) idxDesc = 2;
+
+   // VALIDATION PHASE: Verify all rows elementtype before starting DB operations
+   const allowedTypes = ['Roles', 'Users'];
+   for (let i = 1; i < lines.length; i++) {
+     const values = lines[i].split('\t');
+     const elementid = (values[idxId] || '').trim();
+     if (!elementid) continue; // Skip empty rows
+     const elementtype = (values[idxType] || '').trim();
+     if (!allowedTypes.includes(elementtype)) {
+        throw new Error(`found a value different from Users or Roles in elementtype, please review your input file (Row ${i + 1}: "${elementtype}")`);
+     }
+   }
 
    // validity check, as in searchAndAddSodRaElements, on yr_<realm>_user_complete_info table
    const userTable = `yr_${realm}_user_complete_info`;
