@@ -78,10 +78,19 @@ import {
   mapRealmToSapConnection,
   pingSapWithConfig,
   readSapTable,
+  readAbapProgramSource,
   executeBapiBatch,
   getRfcSchema,
   listAvailableRfcs
 } from './sap.js';
+import {
+  readCodeSecurityChecks,
+  searchTadirPrograms,
+  downloadProgramsSource,
+  runCodeSecurityCheck,
+  runAllCodeSecurityChecks,
+  getCodeSecurityResults
+} from './codeSecurity.js';
 
 // Compute the frontend path based on the execution folder (App)
 import { fileURLToPath } from 'url'; // Keep this if needed for development, otherwise it can stay
@@ -491,7 +500,9 @@ app.post('/api/import-sap/tables', async (req, res) => {
         let options = [];
         switch (cleanName) {
           case 'TADIR':
-            options = ["PGMID EQ 'R3TR' AND OBJECT EQ 'TRAN'"];
+            // both transactions and programs are imported (Code security section
+            // searches programs with OBJECT = 'PROG')
+            options = ["PGMID EQ 'R3TR' AND ( OBJECT EQ 'TRAN' OR OBJECT EQ 'PROG' )"];
             break;
           case 'AGR_TEXTS':
             options = ["SPRAS EQ 'I' OR SPRAS EQ 'E'"];
@@ -695,7 +706,7 @@ app.post('/api/export-sap/tables-txt', async (req, res) => {
 
     //const txtContent = `# Table: ${first.tableName}\n${first.header}\n${first.rows.join('\n')}`;
 
-	  // NEW LOGIC: Also include the type comment we added in db.js
+          // NEW LOGIC: Also include the type comment we added in db.js
     // The correct order is: Table Comment, Types Comment, Header, Data
     const txtContent = [
       first.tableComment,
@@ -1686,6 +1697,107 @@ app.get('/api/mapper/results/export-csv', async (req, res) => {
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
   } finally { client.release(); }
+});
+
+// ── CODE SECURITY ─────────────────────────────────────────────────────────────
+
+// Search ABAP programs in sap_raw_{realm}_tadir (OBJECT = 'PROG')
+app.post('/api/code-security/search-programs', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    const pattern = String(req.body?.pattern || '').trim();
+    const limit = Number(req.body?.limit || 500);
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    if (!pattern) { res.status(400).json({ ok: false, error: 'program name pattern is required' }); return; }
+    const result = await searchTadirPrograms(realm, pattern, limit);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// List the checks defined in CodeSecurity/codeSecurityChecks.txt
+app.get('/api/code-security/checks', async (_req, res) => {
+  try {
+    const checks = await readCodeSecurityChecks();
+    res.json({ ok: true, checks });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// SSE endpoint: downloads the ABAP source of EVERY program in the given list
+// (the rows of the frontend "Found programs" table) and of every include,
+// recursively. One sub-folder per program under CodeSecurity/.
+// (same live-progress approach as /api/sod/run-analysis-stream)
+// POST JSON body: { realm, programs: ['PROG1', 'PROG2', ...] }
+app.post('/api/code-security/download-source-stream', async (req, res) => {
+  const realm = String(req.body?.realm || '').trim();
+  const programs = Array.isArray(req.body?.programs)
+    ? req.body.programs.map((p) => String(p || '').trim()).filter(Boolean)
+    : [];
+
+  if (!realm) {
+    res.status(400).json({ ok: false, error: 'realm is required' });
+    return;
+  }
+  if (!programs.length) {
+    res.status(400).json({ ok: false, error: 'programs list is required (run a search first)' });
+    return;
+  }
+
+  const realmConfig = await getSapRealm(realm);
+  if (!realmConfig) {
+    res.status(404).json({ ok: false, error: `Realm not found: ${realm}` });
+    return;
+  }
+  const sapConfig = mapRealmToSapConnection(realmConfig);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  send({ type: 'start', total: programs.length });
+
+  try {
+    const result = await downloadProgramsSource(sapConfig, programs, (progress) => send({ ...progress }));
+    send({ type: 'done', ...result });
+  } catch (error) {
+    send({ type: 'error', error: error?.message || 'Code security source download failed' });
+  } finally {
+    res.end();
+  }
+});
+
+// Run a single check (by ID) against all downloaded program folders
+app.post('/api/code-security/run-check', async (req, res) => {
+  try {
+    const checkId = String(req.body?.checkId || '').trim();
+    if (!checkId) { res.status(400).json({ ok: false, error: 'checkId is required' }); return; }
+
+    const checks = await readCodeSecurityChecks();
+    const check = checks.find((c) => c.id === checkId);
+    if (!check) { res.status(404).json({ ok: false, error: `Check not found: ${checkId}` }); return; }
+
+    const result = await runCodeSecurityCheck(check);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Run every check defined in the config file
+app.post('/api/code-security/run-all-checks', async (_req, res) => {
+  try {
+    const result = await runAllCodeSecurityChecks();
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Stored results (paginated)
+app.get('/api/code-security/results', async (req, res) => {
+  try {
+    const limit = Number(req.query?.limit || 100);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getCodeSecurityResults(limit, offset);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 const port = Number(process.env.PORT || 3000);

@@ -10,6 +10,7 @@ import RfcSection from './sections/RfcSection.jsx';
 import SodSection from './sections/SodSection.jsx';
 import CoverageSection from './sections/CoverageSection.jsx';
 import MapperSection from './sections/MapperSection.jsx';
+import CodeSecuritySection from './sections/CodeSecuritySection.jsx';
 
 const SOD_EXPECTED_TABLES_FRONTEND = [
   'sod_business_process',
@@ -240,6 +241,28 @@ export default function App() {
   const mapElementsFileRef = useRef(null);
   const mapRolesFileRef = useRef(null);
 
+  // Code security section state
+  const [csProgramPattern, setCsProgramPattern] = useState('');
+  const [csSearchLoading, setCsSearchLoading] = useState(false);
+  const [csPrograms, setCsPrograms] = useState([]);
+  const [csSearchMsg, setCsSearchMsg] = useState('');
+  const [csSearchErr, setCsSearchErr] = useState('');
+  const [csDownloadLoading, setCsDownloadLoading] = useState(false);
+  const [csDownloadMsg, setCsDownloadMsg] = useState('');
+  const [csDownloadErr, setCsDownloadErr] = useState('');
+  const [csDownloadProgress, setCsDownloadProgress] = useState(null);
+  const [csChecks, setCsChecks] = useState([]);
+  const [csChecksLoading, setCsChecksLoading] = useState(false);
+  const [csChecksErr, setCsChecksErr] = useState('');
+  const [csSelectedChecks, setCsSelectedChecks] = useState(new Set());
+  const [csSemaphores, setCsSemaphores] = useState({}); // checkId -> 'RED' | 'GREEN'
+  const [csRunLoading, setCsRunLoading] = useState(''); // checkId or 'all' while running
+  const [csRunMsg, setCsRunMsg] = useState('');
+  const [csRunErr, setCsRunErr] = useState('');
+  const [csResults, setCsResults] = useState([]);
+  const [csResultsTotal, setCsResultsTotal] = useState(0);
+  const [csResultsPage, setCsResultsPage] = useState(0);
+
   function navBtnStyle(active) {
     return {
       padding: sidebarCollapsed ? '8px 0' : '8px 12px',
@@ -324,6 +347,10 @@ export default function App() {
       mapLoadElements();
       mapLoadRoles();
       mapLoadResults(0);
+    }
+    else if (section === 'code-security') {
+      csLoadChecks();
+      csLoadResults(0);
     }
   }, [section]);
 
@@ -2014,6 +2041,146 @@ async function executeRfcBatch() {
     setFn(next);
   }
 
+  // ── Code security handlers ──────────────────────────────────────────────────
+  async function csLoadChecks() {
+    setCsChecksLoading(true);
+    setCsChecksErr('');
+    try {
+      const data = await fetchJson('/api/code-security/checks');
+      setCsChecks(data.checks || []);
+    } catch (e) { setCsChecksErr(e.message); }
+    finally { setCsChecksLoading(false); }
+  }
+
+  async function csSearchPrograms() {
+    setCsSearchErr(''); setCsSearchMsg('');
+    if (!csProgramPattern.trim()) { setCsSearchErr('Enter a program name pattern'); return; }
+    setCsSearchLoading(true);
+    try {
+      const r = await fetchJson('/api/code-security/search-programs', {
+        method: 'POST',
+        body: JSON.stringify({ realm: selectedRealm.trim(), pattern: csProgramPattern.trim() })
+      });
+      setCsPrograms(r.rows || []);
+      setCsSearchMsg(`Found ${r.rows?.length ?? 0} program(s)${r.truncated ? ' (list truncated)' : ''}`);
+      if (!r.rows?.length) setCsSearchMsg('No programs found with this pattern.');
+    } catch (e) { setCsSearchErr(e.message); }
+    finally { setCsSearchLoading(false); }
+  }
+
+  async function csDownloadSource() {
+    setCsDownloadErr(''); setCsDownloadMsg('');
+    // The download processes EVERY program listed in the results table (right side),
+    // NOT the textbox value: one sub-folder per program is created under CodeSecurity/.
+    const programs = [...new Set(
+      csPrograms.map(r => String(r?.obj_name || '').trim()).filter(Boolean)
+    )];
+    if (!programs.length) {
+      setCsDownloadErr('No programs to download: click "Search program" first (the download processes the programs listed in the results table)');
+      return;
+    }
+    setCsDownloadLoading(true);
+    setCsDownloadProgress(null);
+    try {
+      // SSE stream (same live-progress approach as the SOD analysis)
+      const resp = await fetch(`${API_BASE}/api/code-security/download-source-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ realm: selectedRealm.trim(), programs })
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed: ${resp.status}`);
+      }
+
+      // read the event stream manually (fetch + reader)
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult = null;
+      let streamError = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          const line = part.split('\n').find(l => l.startsWith('data:'));
+          if (!line) continue;
+          const evt = JSON.parse(line.slice(5).trim());
+          if (evt.type === 'progress') {
+            setCsDownloadProgress(evt);
+          } else if (evt.type === 'done') {
+            finalResult = evt;
+          } else if (evt.type === 'error') {
+            streamError = evt.error;
+          }
+        }
+      }
+
+      if (streamError) throw new Error(streamError);
+      if (!finalResult) throw new Error('Download stream ended without a result');
+
+      let msg = `Downloaded ${finalResult.downloaded} source file(s) for ${finalResult.folders ?? programs.length} program(s) — one sub-folder per program under CodeSecurity/`;
+      if (finalResult.errors?.length) {
+        msg += ` — ${finalResult.errors.length} program(s) failed: ${finalResult.errors.map(e => `${e.program} (${e.error})`).join('; ')}`;
+        setCsDownloadErr(msg);
+      } else {
+        setCsDownloadMsg(msg);
+      }
+    } catch (e) { setCsDownloadErr(e.message); }
+    finally {
+      setCsDownloadLoading(false);
+      setCsDownloadProgress(null);
+    }
+  }
+
+  async function csRunCheck(checkId) {
+    setCsRunErr(''); setCsRunMsg('');
+    setCsRunLoading(checkId);
+    try {
+      const r = await fetchJson('/api/code-security/run-check', {
+        method: 'POST',
+        body: JSON.stringify({ checkId })
+      });
+      setCsSemaphores(old => ({ ...old, [checkId]: r.semaphore }));
+      setCsRunMsg(`Check ${checkId}: ${r.programs} program(s) scanned — semaphore ${r.semaphore === 'RED' ? 'RED (issue found)' : r.semaphore === 'GREEN' ? 'GREEN' : 'n/a'}`);
+      csLoadResults(0);
+    } catch (e) { setCsRunErr(e.message); }
+    finally { setCsRunLoading(''); }
+  }
+
+  async function csRunAllChecks() {
+    setCsRunErr(''); setCsRunMsg('');
+    setCsRunLoading('all');
+    try {
+      const r = await fetchJson('/api/code-security/run-all-checks', { method: 'POST' });
+      setCsSemaphores(old => ({ ...old, ...(r.semaphores || {}) }));
+      setCsRunMsg(`Run complete: ${r.total} check(s) — ${r.redCount} red, ${r.greenCount} green`);
+      csLoadResults(0);
+    } catch (e) { setCsRunErr(e.message); }
+    finally { setCsRunLoading(''); }
+  }
+
+  async function csLoadResults(page = 0) {
+    setCsResultsPage(page);
+    try {
+      const data = await fetchJson(`/api/code-security/results?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+      setCsResults(data.rows || []);
+      setCsResultsTotal(data.total || 0);
+    } catch (e) { console.error(e); }
+  }
+
+  function csToggleCheck(checkId) {
+    setCsSelectedChecks(old => {
+      const next = new Set(old);
+      next.has(checkId) ? next.delete(checkId) : next.add(checkId);
+      return next;
+    });
+  }
+
   // ── contest for sections: explicit dependencies for each view ──
   const settingsCtx = {
     appHealth, checkForUpdates, dbHealth, errors,
@@ -2109,6 +2276,16 @@ async function executeRfcBatch() {
     setMapElementPattern, setMapElementsSelected, setMapRolePattern, setMapRolesSelected
   };
 
+  const codeSecurityCtx = {
+    selectedRealm, csProgramPattern, setCsProgramPattern,
+    csSearchLoading, csPrograms, csSearchMsg, csSearchErr, csDoSearch: csSearchPrograms,
+    csDownloadLoading, csDownloadMsg, csDownloadErr, csDownloadProgress, csDoDownload: csDownloadSource,
+    csChecks, csChecksLoading, csChecksErr, csLoadChecks,
+    csSelectedChecks, csToggleCheck, csSemaphores,
+    csRunLoading, csRunCheck, csRunAllChecks, csRunMsg, csRunErr,
+    csResults, csResultsTotal, csResultsPage, csLoadResults
+  };
+
   return (
     <main style={{
       ...layoutStyle,
@@ -2177,6 +2354,10 @@ async function executeRfcBatch() {
               <span style={{ fontSize: 16 }}>🧩</span>
               {!sidebarCollapsed && <span>Mapper</span>}
             </button>
+            <button style={navBtnStyle(section === 'code-security')} disabled={!selectedRealm} onClick={() => setSection('code-security')} title="Code security">
+              <span style={{ fontSize: 16 }}>🔒</span>
+              {!sidebarCollapsed && <span>Code security</span>}
+            </button>
           </div>
         </div>
 
@@ -2218,6 +2399,7 @@ async function executeRfcBatch() {
         {section === 'sod' ? <SodSection ctx={sodCtx} /> : null}
         {section === 'coverage' ? <CoverageSection ctx={coverageCtx} /> : null}
         {section === 'mapper' ? <MapperSection ctx={mapperCtx} /> : null}
+        {section === 'code-security' ? <CodeSecuritySection ctx={codeSecurityCtx} /> : null}
       </section>
     </main>
   );

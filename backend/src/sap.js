@@ -464,6 +464,59 @@ export async function readSapTable(config, tableName, fieldsToSelect = [], rowsk
   }
 }
 
+// Reads the source code of a single ABAP program via RPY_PROGRAM_READ.
+// Returns the joined source text and the list of includes (recursive download is
+// handled by the caller, see codeSecurity.js).
+export async function readAbapProgramSource(sapConfig, programName) {
+  const nodeRfc = await loadNodeRfc();
+  if (!nodeRfc) {
+    throw new Error('node-rfc is not installed or SAP RFC SDK is unavailable in runtime.');
+  }
+
+  const missing = validateSapConfig(sapConfig);
+  if (missing.length) {
+    throw new Error(`Missing SAP configuration values: ${missing.join(', ')}`);
+  }
+
+  const client = new nodeRfc.Client(sapConfig);
+  try {
+    await client.open();
+
+    const result = await client.call('RPY_PROGRAM_READ', {
+      PROGRAM_NAME: String(programName || '').trim(),
+      LANGUAGE: 'EN',
+      WITH_INCLUDELIST: 'X',
+      ONLY_SOURCE: 'X',
+      READ_LATEST_VERSION: 'X',
+      WITH_LOWERCASE: 'X'
+    });
+
+    // SOURCE_EXTENDED (structure RSWSOURCET): one line of source per row (field LINE)
+    const sourceLines = (Array.isArray(result?.SOURCE_EXTENDED) ? result.SOURCE_EXTENDED : [])
+      .map((row) => String(row?.LINE ?? row?.line ?? ''))
+      .join('\n');
+
+    // INCLUDE_TAB (structure RPY_PROGINC): the include programs called by this program
+    const includes = (Array.isArray(result?.INCLUDE_TAB) ? result.INCLUDE_TAB : [])
+      .map((row) => String(
+        row?.INCLUDE_NAME ?? row?.include_name ?? row?.INCNAME ?? row?.PROGNAME ?? row?.LINE ?? row?.line ?? row?.NAME ?? row?.name ?? ''
+      ).trim())
+      .filter((name) => name.length > 0);
+
+    return {
+      program: String(programName || '').trim(),
+      source: sourceLines,
+      includes
+    };
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      // Ignore close errors after the RFC call.
+    }
+  }
+}
+
 export async function fetchUserStatistics(config, selectedAtIso, periodType = 'D') {
   const nodeRfc = await loadNodeRfc();
   if (!nodeRfc) {

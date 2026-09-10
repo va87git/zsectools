@@ -1,0 +1,10 @@
+ID=001
+TEXT=check userid hardcoded in ABAP
+SEARCH_STRING=if. sy-uname eq
+IS_DEFECTIVE=TRUE
+
+ID=002
+TEXT=check test for AGR_NAME role hardcoded
+SEARCH_STRING=AGR_NAME
+IS_DEFECTIVE=TRUE
+
