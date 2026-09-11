@@ -1,0 +1,69 @@
+ID=001
+TEXT=check userid hardcoded in ABAP
+SEARCH_STRING=if sy-uname
+IS_DEFECTIVE=TRUE
+
+ID=002
+TEXT=Roles hardcoded from custom tables
+SEARCH_STRING=Z.+-.+AGR_NAME
+IS_DEFECTIVE=TRUE
+
+ID=003
+TEXT=User-role assignment check
+SEARCH_STRING=AGR_USERS
+IS_DEFECTIVE=TRUE
+
+ID=004
+TEXT=Missing AUTHORITY-CHECK
+SEARCH_STRING=AUTHORITY-CHECK
+IS_DEFECTIVE=FALSE
+
+ID=005
+TEXT=Internal, direct OS Command Call
+SEARCH_STRING=CALL 'SYSTEM'
+IS_DEFECTIVE=TRUE
+
+ID=006
+TEXT=Create and execute ABABP code dynamically
+SEARCH_STRING=GENERATE REPORT
+IS_DEFECTIVE=TRUE
+
+ID=007
+TEXT=Write source code directly in DB
+SEARCH_STRING=INSERT REPORT
+IS_DEFECTIVE=TRUE
+
+ID=008
+TEXT=Dynamically calls sub-report
+SEARCH_STRING=SUBMIT (*)
+IS_DEFECTIVE=TRUE
+
+ID=009
+TEXT=Start T-CODE skipping initial authority checks
+SEARCH_STRING=CALL TRANSACTION*AND SKIP FIRST SCREEN
+IS_DEFECTIVE=TRUE
+
+ID=010
+TEXT=Run OS commands on Host
+SEARCH_STRING=SXPG_COMMAND_EXECUTE
+IS_DEFECTIVE=TRUE
+
+ID=011
+TEXT=Wrong logical handling based on systemID
+SEARCH_STRING=IF sy-sysid
+IS_DEFECTIVE=TRUE
+
+ID=012
+TEXT=Potential exposing of password in a clear string
+SEARCH_STRING=PASSWORD
+IS_DEFECTIVE=TRUE
+
+ID=013
+TEXT=Potential exposing to SQL Injection (dynamic where)
+SEARCH_STRING=SELECT*WHERE (* = * && *)
+IS_DEFECTIVE=TRUE
+
+ID=014
+TEXT=Potential exposing to SQL Injection (dynamic table name)
+SEARCH_STRING=FROM (*)
+IS_DEFECTIVE=TRUE

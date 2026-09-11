@@ -499,7 +499,7 @@ export async function readAbapProgramSource(sapConfig, programName) {
     // INCLUDE_TAB (structure RPY_PROGINC): the include programs called by this program
     const includes = (Array.isArray(result?.INCLUDE_TAB) ? result.INCLUDE_TAB : [])
       .map((row) => String(
-        row?.INCLUDE_NAME ?? row?.include_name ?? row?.INCNAME ?? row?.PROGNAME ?? row?.LINE ?? row?.line ?? row?.NAME ?? row?.name ?? ''
+        row?.INCLUDE_NAME ?? row?.include_name ?? row?.INCNAME ?? row?.INCLNAME ?? '' //it is INCLNAME, but added some fallback cases.
       ).trim())
       .filter((name) => name.length > 0);
 

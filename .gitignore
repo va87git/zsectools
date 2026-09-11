@@ -11,3 +11,5 @@ pnpm-debug.log*
 SAP-TABLE-LIST.txt
 node-bin/
 postgres/
+**/CodeSecurity/*
+!CodeSecurity/codeSecurityChecksExample.txt
