@@ -9,20 +9,26 @@ import { readAbapProgramSource } from './sap.js';
 //
 //   CodeSecurity/
 //   ├── codeSecurityChecks.txt          <- check definitions (key=value rows)
+//   ├── codeSecurityChecksExample.txt   <- sample delivered with the project:
+//   │                                      copied to codeSecurityChecks.txt when
+//   │                                      that file is missing
 //   └── <PROGRAM_NAME>/                 <- one folder per downloaded program
 //       ├── <PROGRAM_NAME>.txt          <- ABAP source of the program
 //       └── <INCLUDE_NAME>.txt          <- ABAP source of every include found
 //
 // The folder tree is created automatically if missing.
 
-export const CODE_SECURITY_ROOT = path.join(process.cwd(), 'CodeSecurity');
+export const CODE_SECURITY_ROOT = path.join(process.cwd(), 'CodeSecurity'); //WARNING! to be fixed for issue #39
 const CHECKS_FILE_NAME = 'codeSecurityChecks.txt';
+const EXAMPLE_CHECKS_FILE_NAME = 'codeSecurityChecksExample.txt';
 
-// Default content written when the checks config file does not exist yet.
+// Default content written when BOTH codeSecurityChecks.txt and
+// codeSecurityChecksExample.txt are missing.
 const DEFAULT_CHECKS_FILE_CONTENT = [
   'ID=001',
   'TEXT=check userid hardcoded in ABAP',
   'SEARCH_STRING=if. sy-uname eq',
+  'EXCEPTION=*DDIC*',
   'IS_DEFECTIVE=TRUE',
   '',
   ''
@@ -30,6 +36,10 @@ const DEFAULT_CHECKS_FILE_CONTENT = [
 
 function getChecksFilePath() {
   return path.join(CODE_SECURITY_ROOT, CHECKS_FILE_NAME);
+}
+
+function getExampleChecksFilePath() {
+  return path.join(CODE_SECURITY_ROOT, EXAMPLE_CHECKS_FILE_NAME);
 }
 
 // Keeps folder / file names safe on every platform (ABAP names are normally
@@ -50,7 +60,8 @@ export async function ensureCodeSecurityDirs() {
 // ── Checks config file ────────────────────────────────────────────────────────
 
 // Pure parser: key=value rows grouped into check records.
-// A new record starts at "ID=" ; unknown keys are ignored.
+// A new record starts at "ID=" ; SEARCH_STRING= and EXCEPTION= may repeat
+// (multi-line lists: every row is appended). Unknown keys are ignored.
 export function parseChecksContent(content) {
   const checks = [];
   let current = null;
@@ -68,20 +79,21 @@ export function parseChecksContent(content) {
     if (key === 'ID') {
       // start of a new record
       if (current && current.id) checks.push(current);
-      current = { id: value, text: '', searchString: '', isDefective: false };
+      current = { id: value, text: '', searchStrings: [], exceptions: [], isDefective: false };
       continue;
     }
     if (!current) continue;
 
     if (key === 'TEXT') current.text = value;
-    else if (key === 'SEARCH_STRING') current.searchString = value;
+    else if (key === 'SEARCH_STRING') { if (value) current.searchStrings.push(value); }
+    else if (key === 'EXCEPTION') { if (value) current.exceptions.push(value); }
     else if (key === 'IS_DEFECTIVE') current.isDefective = value.toUpperCase() === 'TRUE';
   }
 
   if (current && current.id) checks.push(current);
 
   // keep only complete records
-  return checks.filter((c) => c.id && c.searchString);
+  return checks.filter((c) => c.id && c.searchStrings.length > 0);
 }
 
 export async function readCodeSecurityChecks() {
@@ -92,9 +104,16 @@ export async function readCodeSecurityChecks() {
   try {
     content = await fs.readFile(filePath, 'utf8');
   } catch {
-    // auto-create the config file with a sample check so the feature works out of the box
-    await fs.writeFile(filePath, DEFAULT_CHECKS_FILE_CONTENT, 'utf8');
-    content = DEFAULT_CHECKS_FILE_CONTENT;
+    // codeSecurityChecks.txt is missing:
+    //   1. seed it from the delivered example file (codeSecurityChecksExample.txt)
+    //   2. fall back to the built-in sample check when the example is missing too
+    try {
+      content = await fs.readFile(getExampleChecksFilePath(), 'utf8');
+      await fs.writeFile(filePath, content, 'utf8');
+    } catch {
+      content = DEFAULT_CHECKS_FILE_CONTENT;
+      await fs.writeFile(filePath, content, 'utf8');
+    }
   }
 
   const checks = parseChecksContent(content);
@@ -323,21 +342,29 @@ export async function downloadProgramsSource(sapConfig, programNames, onProgress
 
 // ── Checks execution ──────────────────────────────────────────────────────────
 
-// Case-insensitive occurrence counter with SAP wildcards:
+// Converts a SAP-style wildcard pattern into a case-insensitive RegExp:
 //   * -> any sequence of characters (also across newlines)
 //   + -> exactly one character
-export function countOccurrences(content, searchString) {
-  const pattern = String(searchString || '').trim();
-  if (!pattern) return 0;
-
+// Every other regex special char is escaped (kept literal).
+// Returns null for empty patterns.
+export function wildcardToRegExp(pattern, globalFlag = false) {
   // 1. escape every regex special char (so . ( ) [ ] ecc. in ABAP stay literal)
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = String(pattern || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escaped) return null;
 
   // 2. SAP wildcards: * -> .*   + -> .   (the dotAll flag makes them match \n too)
   const regexSource = escaped.replace(/\\\*/g, '.*').replace(/\\\+/g, '.');
 
-  // 3. case-insensitive + global + dotAll
-  const re = new RegExp(regexSource, 'gis');
+  // 3. case-insensitive (+ global when the caller needs every match)
+  return new RegExp(regexSource, globalFlag ? 'gis' : 'i');
+}
+
+// Case-insensitive occurrence counter with SAP wildcards:
+//   * -> any sequence of characters (also across newlines)
+//   + -> exactly one character
+export function countOccurrences(content, searchString) {
+  const re = wildcardToRegExp(searchString, true);
+  if (!re) return 0;
 
   const matches = String(content || '').match(re);
   return matches ? matches.length : 0;
@@ -363,12 +390,26 @@ export function stripAbapComments(content) {
     .join('\n');
 }
 
+// Removes every line matching one of the EXCEPTION patterns
+// (case-insensitive, SAP wildcards allowed): occurrences of the SEARCH_STRING
+// falling on those lines are never counted (e.g. "if sy-uname = 'DDIC'").
+// Accepts the already-compiled EXCEPTION RegExps.
+export function removeExceptionLines(content, exceptionRegExps) {
+  const regexes = Array.isArray(exceptionRegExps) ? exceptionRegExps.filter(Boolean) : [];
+  if (!regexes.length) return String(content || '');
+  return String(content || '')
+    .split(/\r?\n/)
+    .filter((line) => !regexes.some((re) => re.test(line)))
+    .join('\n');
+}
+
 // Semaphore rule:
-//   RED   = string found and IS_DEFECTIVE is TRUE, or string NOT found and IS_DEFECTIVE is FALSE
-//   GREEN = otherwise
-export function computeSemaphore(found, isDefective) {
+//   RED   = string found and IS_DEFECTIVE is TRUE
+//           or string NOT found, IS_DEFECTIVE is FALSE and no EXCEPTION matched
+//   GREEN = otherwise (an EXCEPTION match acts as a result inverter)
+export function computeSemaphore(found, isDefective, exceptionHit = false) {
   const defective = isDefective === true || String(isDefective).toUpperCase() === 'TRUE';
-  return (found && defective) || (!found && !defective) ? 'RED' : 'GREEN';
+  return (found && defective) || (!found && !defective && !exceptionHit) ? 'RED' : 'GREEN';
 }
 
 // Lists the downloaded program folders (one folder per program).
@@ -379,14 +420,22 @@ export async function listDownloadedProgramFolders() {
 }
 
 // Runs a single check against ALL downloaded program folders:
-// for every program folder, the SEARCH_STRING is looked up in every .txt file
-// of that folder. One result row per program is stored in code_security_results.
+// every SEARCH_STRING of the check is looked up in every .txt file of each
+// folder (comments stripped; lines matching an EXCEPTION pattern are skipped).
+// EXCEPTION also acts as a result inverter: if any EXCEPTION pattern is found
+// in the program and IS_DEFECTIVE is FALSE, the check cannot be RED.
+// One result row per program is stored in code_security_results.
 export async function runCodeSecurityCheck(check) {
   await ensureCodeSecurityResultsTable();
 
-  if (!check || !check.id || !check.searchString) {
-    throw new Error('Invalid check: id and SEARCH_STRING are required');
+  if (!check || !check.id || !check.searchStrings?.length) {
+    throw new Error('Invalid check: id and at least one SEARCH_STRING are required');
   }
+
+  // compile the EXCEPTION patterns once for the whole check run
+  const exceptionRegExps = (check.exceptions || [])
+    .map((ex) => wildcardToRegExp(ex))
+    .filter(Boolean);
 
   const programFolders = await listDownloadedProgramFolders();
   const rows = [];
@@ -399,16 +448,31 @@ export async function runCodeSecurityCheck(check) {
       .map((e) => e.name);
 
     let occurrences = 0;
+    let exceptionHit = false;
     for (const fileName of txtFiles) {
-      const content = await fs.readFile(path.join(folderPath, fileName), 'utf8');
-      occurrences += countOccurrences(stripAbapComments(content), check.searchString);
+      const stripped = stripAbapComments(
+        await fs.readFile(path.join(folderPath, fileName), 'utf8')
+      );
+
+      // does any EXCEPTION pattern occur in the program?
+      // (inverts the result for IS_DEFECTIVE=FALSE checks)
+      if (!exceptionHit && exceptionRegExps.length) {
+        exceptionHit = exceptionRegExps.some((re) => re.test(stripped));
+      }
+
+      // count the matches of every SEARCH_STRING, skipping lines
+      // that match an EXCEPTION pattern (e.g. hardcoded 'DDIC' user)
+      const content = removeExceptionLines(stripped, exceptionRegExps);
+      for (const search of check.searchStrings) {
+        occurrences += countOccurrences(content, search);
+      }
     }
 
     const found = occurrences > 0;
     rows.push({
       program: folder,
       check_id: check.id,
-      result: computeSemaphore(found, check.isDefective),
+      result: computeSemaphore(found, check.isDefective, exceptionHit),
       occurrences
     });
   }

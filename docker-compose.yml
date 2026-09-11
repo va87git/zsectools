@@ -52,6 +52,7 @@ services:
       # Set SAPNWRFC_HOST_PATH and SAPNWRFC_CONTAINER_PATH to real paths when needed.
       - ${SAPNWRFC_HOST_PATH}:${SAPNWRFC_CONTAINER_PATH}:ro
       # Mount SAP table list file
+      # WARNING to be fixed for issue #39:
       - ./SAP-TABLE-LIST.txt:/app/SAP-TABLE-LIST.txt:ro
     ports:
       - "${BACKEND_PORT:-3001}:3000"

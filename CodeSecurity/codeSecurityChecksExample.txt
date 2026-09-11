@@ -1,6 +1,12 @@
 ID=001
 TEXT=check userid hardcoded in ABAP
-SEARCH_STRING=if sy-uname
+SEARCH_STRING=if sy-uname = '
+SEARCH_STRING=' eq sy-uname
+SEARCH_STRING=sy-uname eq '
+SEARCH_STRING=' = sy-uname
+EXCEPTION=DDIC
+EXCEPTION=SAP
+EXCEPTION=TMSADMIN
 IS_DEFECTIVE=TRUE
 
 ID=002
@@ -55,12 +61,16 @@ IS_DEFECTIVE=TRUE
 
 ID=012
 TEXT=Potential exposing of password in a clear string
-SEARCH_STRING=PASSWORD
+SEARCH_STRING=PASSWORD*'*'
+SEARCH_STRING=passwd*'*'
+SEARCH_STRING=pwd*'*'
 IS_DEFECTIVE=TRUE
 
 ID=013
 TEXT=Potential exposing to SQL Injection (dynamic where)
 SEARCH_STRING=SELECT*WHERE (* = * && *)
+EXCEPTION=CL_ABAP_DYN_PRG
+EXCEPTION=escape
 IS_DEFECTIVE=TRUE
 
 ID=014

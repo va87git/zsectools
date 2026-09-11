@@ -213,6 +213,7 @@ app.get('/api/tables', async (req, res) => {
 
 // path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
     // process.cwd() points to the main folder of your project
+    // WARNING to be fixed for issue #39:
     const tableFile = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
 
     const content = await fs.readFile(tableFile, 'utf8');
