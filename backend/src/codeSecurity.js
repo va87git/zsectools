@@ -343,6 +343,26 @@ export function countOccurrences(content, searchString) {
   return matches ? matches.length : 0;
 }
 
+// Removes ABAP comments:
+//   - full-line comments: lines whose FIRST character is * (ABAP rule: col. 1)
+//   - inline comments: everything after an unquoted " on the line
+// (a " inside a single-quote literal is preserved)
+export function stripAbapComments(content) {
+  return String(content || '')
+    .split(/\r?\n/)
+    .map((line) => {
+      if (/^\s*\*/.test(line)) return '';              // full-line comment
+      let inLiteral = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === "'") inLiteral = !inLiteral;         // '' doubling works with toggle
+        else if (ch === '"' && !inLiteral) return line.slice(0, i); // inline comment
+      }
+      return line;
+    })
+    .join('\n');
+}
+
 // Semaphore rule:
 //   RED   = string found and IS_DEFECTIVE is TRUE, or string NOT found and IS_DEFECTIVE is FALSE
 //   GREEN = otherwise
@@ -381,7 +401,7 @@ export async function runCodeSecurityCheck(check) {
     let occurrences = 0;
     for (const fileName of txtFiles) {
       const content = await fs.readFile(path.join(folderPath, fileName), 'utf8');
-      occurrences += countOccurrences(content, check.searchString);
+      occurrences += countOccurrences(stripAbapComments(content), check.searchString);
     }
 
     const found = occurrences > 0;
