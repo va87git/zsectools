@@ -323,19 +323,24 @@ export async function downloadProgramsSource(sapConfig, programNames, onProgress
 
 // ── Checks execution ──────────────────────────────────────────────────────────
 
-// Case-insensitive occurrence counter.
+// Case-insensitive occurrence counter with SAP wildcards:
+//   * -> any sequence of characters (also across newlines)
+//   + -> exactly one character
 export function countOccurrences(content, searchString) {
-  const needle = String(searchString || '').toLowerCase();
-  if (!needle) return 0;
-  const haystack = String(content || '').toLowerCase();
+  const pattern = String(searchString || '').trim();
+  if (!pattern) return 0;
 
-  let count = 0;
-  let index = haystack.indexOf(needle);
-  while (index !== -1) {
-    count += 1;
-    index = haystack.indexOf(needle, index + needle.length);
-  }
-  return count;
+  // 1. escape every regex special char (so . ( ) [ ] ecc. in ABAP stay literal)
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // 2. SAP wildcards: * -> .*   + -> .   (the dotAll flag makes them match \n too)
+  const regexSource = escaped.replace(/\\\*/g, '.*').replace(/\\\+/g, '.');
+
+  // 3. case-insensitive + global + dotAll
+  const re = new RegExp(regexSource, 'gis');
+
+  const matches = String(content || '').match(re);
+  return matches ? matches.length : 0;
 }
 
 // Semaphore rule:
