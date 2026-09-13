@@ -86,10 +86,13 @@ import {
 import {
   readCodeSecurityChecks,
   searchTadirPrograms,
+  filterProgramsInTadir,
   downloadProgramsSource,
   runCodeSecurityCheck,
   runAllCodeSecurityChecks,
-  getCodeSecurityResults
+  getCodeSecurityResults,
+  codeSecurityResultsTableExists,
+  clearCodeSecurityResults
 } from './codeSecurity.js';
 
 // Compute the frontend path based on the execution folder (App)
@@ -211,10 +214,9 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/tables', async (req, res) => {
   try {
 
-// path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
-    // process.cwd() points to the main folder of your project
-    // WARNING to be fixed for issue #39:
-    const tableFile = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
+    // path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
+    const defaultPath = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
+    const tableFile = process.env.SAP_TABLE_LIST_PATH || defaultPath;
 
     const content = await fs.readFile(tableFile, 'utf8');
     const tables = content.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
@@ -1715,6 +1717,21 @@ app.post('/api/code-security/search-programs', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// Verify an explicit list of program names against TADIR (used by "Import CSV",
+// for program lists that no single search pattern can express).
+// POST JSON body: { realm, programs: ['PROG1', 'PROG2', ...] }
+// Response: { ok, listed, found: [TADIR rows], notFound: ['NAME', ...] }
+app.post('/api/code-security/check-programs', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    const programs = Array.isArray(req.body?.programs) ? req.body.programs : [];
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    if (!programs.length) { res.status(400).json({ ok: false, error: 'programs list is required' }); return; }
+    const result = await filterProgramsInTadir(realm, programs);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // List the checks defined in CodeSecurity/codeSecurityChecks.txt
 app.get('/api/code-security/checks', async (_req, res) => {
   try {
@@ -1791,6 +1808,22 @@ app.post('/api/code-security/run-all-checks', async (_req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// Run only the selected checks (frontend checkboxes)
+// POST JSON body: { ids: ['001', '004', ...] }
+app.post('/api/code-security/run-selected-checks', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map((i) => String(i || '').trim()).filter(Boolean)
+      : [];
+    if (!ids.length) { res.status(400).json({ ok: false, error: 'ids list is required (select at least one check)' }); return; }
+
+    const result = await runAllCodeSecurityChecks(ids);
+    const checks = await readCodeSecurityChecks();
+    const missingIds = ids.filter((id) => !checks.some((c) => c.id === id));
+    res.json({ ok: true, ...result, missingIds });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // Stored results (paginated)
 app.get('/api/code-security/results', async (req, res) => {
   try {
@@ -1798,6 +1831,51 @@ app.get('/api/code-security/results', async (req, res) => {
     const offset = Number(req.query?.offset || 0);
     const result = await getCodeSecurityResults(limit, offset);
     res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Export ALL stored results as a downloadable CSV (same streaming approach as
+// /api/mapper/results/export-csv)
+app.get('/api/code-security/results/export-csv', async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!(await codeSecurityResultsTableExists())) {
+      res.status(404).json({ ok: false, error: 'No results available' });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="code_security_results_${new Date().toISOString().split('T')[0]}.csv"`);
+    const BATCH = 500;
+    let batchOffset = 0;
+    let headerWritten = false;
+    while (true) {
+      const batch = await client.query(
+        `SELECT id, program, check_id, result, occurrences, ran_at
+         FROM code_security_results ORDER BY check_id, program LIMIT $1 OFFSET $2`,
+        [BATCH, batchOffset]
+      );
+      if (batch.rows.length === 0) break;
+      if (!headerWritten) {
+        res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+        headerWritten = true;
+      }
+      for (const row of batch.rows) {
+        res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+      }
+      if (batch.rows.length < BATCH) break;
+      batchOffset += BATCH;
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+  } finally { client.release(); }
+});
+
+// Delete ALL stored results ("Clear results" button)
+app.post('/api/code-security/results/clear', async (_req, res) => {
+  try {
+    const cleared = await clearCodeSecurityResults();
+    res.json({ ok: true, cleared });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

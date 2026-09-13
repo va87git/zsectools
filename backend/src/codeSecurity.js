@@ -18,7 +18,8 @@ import { readAbapProgramSource } from './sap.js';
 //
 // The folder tree is created automatically if missing.
 
-export const CODE_SECURITY_ROOT = path.join(process.cwd(), 'CodeSecurity'); //WARNING! to be fixed for issue #39
+const defaultPath = path.join(process.cwd(), 'CodeSecurity');
+export const CODE_SECURITY_ROOT = process.env.CODE_SECURITY_ROOT || defaultPath;
 const CHECKS_FILE_NAME = 'codeSecurityChecks.txt';
 const EXAMPLE_CHECKS_FILE_NAME = 'codeSecurityChecksExample.txt';
 
@@ -153,6 +154,19 @@ export async function getCodeSecurityResults(limit = 100, offset = 0) {
   return { rows: res.rows, total };
 }
 
+// Existence check + bulk clear for the results table, used by the server
+// routes (export CSV / clear results). They live here so that the whole
+// code-security feature shares one tableExists call site (db/utils.js).
+export async function codeSecurityResultsTableExists() {
+  return tableExists('code_security_results');
+}
+
+export async function clearCodeSecurityResults() {
+  if (!(await tableExists('code_security_results'))) return 0;
+  const r = await pool.query(`DELETE FROM code_security_results`);
+  return r.rowCount || 0;
+}
+
 // ── Program search (TADIR) ────────────────────────────────────────────────────
 
 // Converts the user pattern into a SQL ILIKE pattern:
@@ -203,6 +217,56 @@ export async function searchTadirPrograms(realm, pattern, limit = 500) {
     total: truncated ? `>${Number(limit)}` : rows.length,
     truncated
   };
+}
+
+// Checks which of the given program names exist in sap_raw_{realm}_tadir
+// (OBJECT = 'PROG'). Used by the "Import CSV" flow: the user provides an
+// explicit list of programs that no single search pattern can express.
+// Matching is case-insensitive (names are upper-cased, like in TADIR);
+// the query is chunked so even very long lists stay within parameter limits.
+// Returns { listed, found (TADIR rows), notFound (names not in TADIR) }.
+export async function filterProgramsInTadir(realm, programNames, chunkSize = 500) {
+  const tableName = `sap_raw_${String(realm || '').toLowerCase()}_tadir`;
+  if (!(await tableExists(tableName))) {
+    throw new Error(`Table '${tableName}' not found. Import the SAP table TADIR first.`);
+  }
+
+  const names = [...new Set((Array.isArray(programNames) ? programNames : [])
+    .map((p) => String(p || '').trim().toUpperCase())
+    .filter(Boolean))];
+  if (!names.length) return { listed: 0, found: [], notFound: [] };
+
+  const found = [];
+  for (let i = 0; i < names.length; i += chunkSize) {
+    const chunk = names.slice(i, i + chunkSize);
+    const placeholders = chunk.map((_, j) => `$${j + 1}`).join(',');
+    let rows;
+    try {
+      const res = await pool.query(
+        `SELECT pgmid, object, obj_name, devclass, author
+         FROM "${tableName}"
+         WHERE lower(object) = 'prog' AND UPPER(obj_name) IN (${placeholders})
+         ORDER BY obj_name`,
+        chunk
+      );
+      rows = res.rows;
+    } catch (err) {
+      // fallback for TADIR imports with a reduced column set (same as searchTadirPrograms)
+      const res = await pool.query(
+        `SELECT pgmid, object, obj_name
+         FROM "${tableName}"
+         WHERE lower(object) = 'prog' AND UPPER(obj_name) IN (${placeholders})
+         ORDER BY obj_name`,
+        chunk
+      );
+      rows = res.rows;
+    }
+    found.push(...rows);
+  }
+
+  const foundNames = new Set(found.map((r) => String(r.obj_name || '').trim().toUpperCase()));
+  const notFound = names.filter((n) => !foundNames.has(n));
+  return { listed: names.length, found, notFound };
 }
 
 // ── Source download (RFC RPY_PROGRAM_READ, recursive on includes) ─────────────
@@ -494,14 +558,22 @@ export async function runCodeSecurityCheck(check) {
 }
 
 // Runs every check defined in the config file, sequentially.
-export async function runAllCodeSecurityChecks() {
+// When `filterIds` is a non-empty array, only the checks with a matching id
+// are run (used by the "Run selected checks" button).
+export async function runAllCodeSecurityChecks(filterIds = null) {
   const checks = await readCodeSecurityChecks();
-  if (!checks.length) {
-    throw new Error('No checks defined in codeSecurityChecks.txt');
+  const wanted = Array.isArray(filterIds) && filterIds.length
+    ? new Set(filterIds.map((id) => String(id)))
+    : null;
+  const list = wanted ? checks.filter((c) => wanted.has(c.id)) : checks;
+  if (!list.length) {
+    throw new Error(wanted
+      ? 'No check matching the selected ids was found in codeSecurityChecks.txt'
+      : 'No checks defined in codeSecurityChecks.txt');
   }
 
   const results = [];
-  for (const check of checks) {
+  for (const check of list) {
     const r = await runCodeSecurityCheck(check);
     results.push({
       checkId: check.id,

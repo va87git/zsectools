@@ -3,12 +3,13 @@ import { PAGE_SIZE } from '../constants.js';
 export default function CodeSecuritySection({ ctx }) {
   const {
   selectedRealm, csProgramPattern, setCsProgramPattern,
-  csSearchLoading, csPrograms, csSearchMsg, csSearchErr, csDoSearch,
+  csSearchLoading, csPrograms, csProgramsLimited, csSearchMsg, csSearchErr, csDoSearch,
+  csImportLoading, csImportFileRef, csDoImportCsv,
   csDownloadLoading, csDownloadMsg, csDownloadErr, csDownloadProgress, csDoDownload,
   csChecks, csChecksLoading, csChecksErr, csLoadChecks,
-  csSelectedChecks, csToggleCheck, csSemaphores,
-  csRunLoading, csRunCheck, csRunAllChecks, csRunMsg, csRunErr,
-  csResults, csResultsTotal, csResultsPage, csLoadResults
+  csSelectedChecks, csToggleCheck, csSelectAllChecks, csDeselectAllChecks, csSemaphores,
+  csRunLoading, csRunCheck, csRunAllChecks, csRunSelectedChecks, csRunMsg, csRunErr,
+  csResults, csResultsTotal, csResultsPage, csLoadResults, csExportResults, csClearResults
   } = ctx;
 
   const panelStyle = { background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, marginBottom: 24 };
@@ -40,6 +41,17 @@ export default function CodeSecuritySection({ ctx }) {
             <button style={btnStyle('var(--success)')} onClick={csDoSearch} disabled={csSearchLoading}>
               {csSearchLoading ? 'Searching...' : 'Search program'}
             </button>
+          </div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+            <input ref={csImportFileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={csDoImportCsv} />
+            <button style={btnStyle('var(--text-muted)')} onClick={() => csImportFileRef.current?.click()}
+              disabled={csImportLoading}
+              title="Load a one-column CSV (first row = header) with the list of programs to verify in TADIR">
+              {csImportLoading ? 'Importing...' : 'Import CSV'}
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+              Load a one-column CSV (first row = header) with the programs to check in TADIR: found ones fill the table on the right.
+            </span>
           </div>
           <div style={{ marginBottom: 12 }}>
             <button style={btnStyle('var(--accent)')}
@@ -83,7 +95,7 @@ export default function CodeSecuritySection({ ctx }) {
           {csPrograms.length > 0 ? (
             <div style={{ overflowX: 'auto', maxHeight: 300, overflowY: 'auto' }}>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 6px' }}>
-                Showing {csPrograms.length} program(s){csPrograms.length >= 500 ? ' (limit reached — refine the pattern)' : ''}
+                Showing {csPrograms.length} program(s){csProgramsLimited ? ' (limit reached — refine the pattern)' : ''}
               </p>
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
@@ -118,8 +130,19 @@ export default function CodeSecuritySection({ ctx }) {
       <div style={panelStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Security Checks</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button style={btnStyle('var(--text-muted)')} onClick={csLoadChecks} disabled={csChecksLoading}>Reload checks</button>
+            <button style={btnStyle('var(--accent)')} onClick={csSelectAllChecks}
+              disabled={csChecksLoading || !csChecks.length}
+              title="Tick every check">Select all</button>
+            <button style={btnStyle('var(--text-muted)')} onClick={csDeselectAllChecks}
+              disabled={csChecksLoading || csSelectedChecks.size === 0}
+              title="Untick every check">Deselect all</button>
+            <button style={btnStyle('var(--success)')} onClick={csRunSelectedChecks}
+              disabled={!!csRunLoading || csSelectedChecks.size === 0}
+              title="Run only the ticked checks">
+              {csRunLoading === 'selected' ? 'Running...' : `Run selected checks (${csSelectedChecks.size})`}
+            </button>
             <button style={btnStyle('var(--success)')} onClick={csRunAllChecks} disabled={csRunLoading === 'all' || !csChecks.length}>
               {csRunLoading === 'all' ? 'Running...' : 'Run all checks'}
             </button>
@@ -161,7 +184,13 @@ export default function CodeSecuritySection({ ctx }) {
       <div style={panelStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Check results</h2>
-          <button style={btnStyle('var(--text-muted)')} onClick={() => csLoadResults(0)}>Refresh</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button style={btnStyle('var(--text-muted)')} onClick={() => csLoadResults(0)}>Refresh</button>
+            <button style={btnStyle('var(--accent)')} onClick={csExportResults} disabled={!csResultsTotal}
+              title="Export the full results table as CSV">Export results</button>
+            <button style={btnStyle('var(--danger)')} onClick={csClearResults} disabled={!csResultsTotal}
+              title="Delete all stored results">Clear results</button>
+          </div>
         </div>
         {csResults.length > 0 ? (
           <>

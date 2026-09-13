@@ -10,6 +10,7 @@
 - [SOD & Audit](#sod--audit)
 - [Coverage](#coverage)
 - [Mapper](#mapper)
+- [Code Security](#code-security)
 - [Settings](#settings)
   - [General](#general)
   - [Health Checks](#health-checks)
@@ -20,9 +21,9 @@
 
 ## Introduction
 
-ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), and perform SOD risk analysis against a configurable rule matrix.
+ZSecTools is a browser-based application for SAP security administration and Segregation of Duties (SOD) analysis. It connects to one or more SAP systems via RFC, lets you import and manage authorization-related data, run mass administration tasks (such as batch RFC execution for users and roles), perform SOD risk analysis against a configurable rule matrix, and scan ABAP source code against configurable security checks (see [Code Security](#code-security)).
 
-The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, **Coverage**, **Mapper** and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
+The application is organized into sections, accessible from the side panel: **SAP Realms**, **Import SAP Tables**, **Reports**, **RFC Execution**, **SOD & Audit**, **Coverage**, **Mapper**, **Code Security** and **Settings** (which includes **Health Checks**). In the side panel, all section buttons are disabled until an active SAP Realm is selected, with the exception of **SAP Realms** and **Settings**, which are always available
 
 ## SAP Realms
 
@@ -247,6 +248,82 @@ Run the analysis and review the coverage metrics.
 * **Export Results**: Exports the full mapper results matrix into a formatted CSV file.
 * **Clear Results**: Drops the results table.
 
+
+## Code Security
+
+The **Code Security** section lets you search ABAP programs, download their source code (including all their includes) and run configurable security checks against it. Typical use cases are the detection of hardcoded user IDs, obsolete or dangerous statements, or any other coding pattern you want to monitor across a set of programs.
+
+All the artifacts of this section live in the `CodeSecurity/` folder at the application root:
+
+- `codeSecurityChecks.txt`: the check definitions (see [The checks configuration file](#the-checks-configuration-file)).
+- `codeSecurityChecksExample.txt`: a sample checks file delivered with the project. When `codeSecurityChecks.txt` is missing, it is automatically created at first startup by copying this example file; only if the example file is missing too, a single built-in sample check is created instead.
+- one sub-folder per downloaded program, each containing the `.txt` source of the program plus the source of every include found (recursively).
+
+The section works on the currently selected realm: the program list comes from the TADIR table (repository objects of type `PROG`), which is imported by the [Import SAP Tables](#import-sap-tables) section.
+
+### The checks configuration file
+
+Each check is defined in `CodeSecurity/codeSecurityChecks.txt` as a group of `KEY=VALUE` rows; a new check starts at the `ID=` row. The supported keys are:
+
+| Key | Meaning |
+|-----|---------|
+| `ID` | Unique identifier of the check; starts a new check record. |
+| `TEXT` | Free description shown next to the ID in the UI. |
+| `SEARCH_STRING` | The string to look for in the source code. It can be repeated inside the same check: every `SEARCH_STRING=` row adds another string to search, and all of them are evaluated together (the occurrence counters are summed). |
+| `EXCEPTION` | Optional exclusion pattern, can be repeated. Source lines matching an EXCEPTION are excluded from the occurrence count; in addition, if any EXCEPTION pattern occurs anywhere in the program, an `IS_DEFECTIVE=FALSE` check can never turn red (see [Semaphore logic](#semaphore-logic)). |
+| `IS_DEFECTIVE` | `TRUE` or `FALSE`. Defines the semantics of the check: `TRUE` means the searched string is a defect (found → red); `FALSE` means the string is a required/safe pattern (not found → red). |
+
+Both `SEARCH_STRING` and `EXCEPTION` values support the SAP-style wildcards `*` (any sequence of characters) and `+` (any single character); the search is case-insensitive.
+
+> **Note**: ABAP comments (full-line `*` comments and inline `"` comments) are stripped from the source before scanning, so strings inside comments do not affect the results.
+
+The checks file is read when the section is loaded; use the **Reload checks** button to re-read it from disk after editing it (no application restart is needed). A check without at least one `SEARCH_STRING` row is ignored.
+
+### Semaphore logic
+
+Every check run produces, for each downloaded program, a result row with a traffic-light value:
+
+- **RED**: the check found a problem — either at least one `SEARCH_STRING` occurrence was found and `IS_DEFECTIVE=TRUE`, or no occurrence was found while `IS_DEFECTIVE=FALSE` and no `EXCEPTION` pattern matched.
+- **GREEN**: no problem detected (all other cases).
+
+The circle next to each check in the **Security Checks** panel shows the overall check semaphore: **RED** if at least one scanned program is red, **GREEN** otherwise (grey means the check has not been run yet).
+
+### Program Source panel
+
+- **Program name**: input field with SAP-style wildcards (`*` = any string, `+` = any single character), e.g. `Z*` or `SAPL+ABC`.
+- **Search program**: searches the TADIR table of the active realm for programs (`PROG` objects) matching the pattern and fills the **Found programs** table on the right. The result set is capped (500 programs): if the limit is reached, the UI suggests refining the pattern.
+- **Import CSV**: alternative to the pattern search, useful when the programs to verify do not share a single naming pattern. It loads a one-column CSV file (`.csv` or `.txt`) containing the list of program names to verify in TADIR:
+  - the **first row is treated as the header and is skipped**;
+  - only the first field of each row is read (separators `;`, `,` or tab are accepted; surrounding double quotes are stripped); empty rows and duplicated names are ignored;
+  - every listed program is verified in TADIR exactly as the **Search program** button does, and the found ones **replace** the content of the **Found programs** table;
+  - at the end of the upload a summary message reports: how many programs are listed in the file, how many were found in TADIR (and loaded in the table) and how many do not exist (the missing names are listed, up to 20).
+- **Download Source**: downloads the ABAP source of **every program listed in the Found programs table** (the textbox value is ignored), creating one sub-folder per program under `CodeSecurity/`. Includes are followed recursively and saved next to the main program (with cycle protection). A live progress bar shows the current program, and the final message reports the total number of files written and any per-program errors (a failing program does not stop the batch). The button is disabled until a search/import has filled the table.
+
+### Found programs panel
+
+Shows the search/import results (one row per program). This table is the input of the **Download Source** button.
+
+### Security Checks panel
+
+Lists the checks defined in `codeSecurityChecks.txt`, each with a checkbox, the semaphore circle and a per-check run button:
+
+- **Reload checks**: re-reads the checks file from disk.
+- **Select all / Deselect all**: tick or untick every check checkbox at once.
+- **Run selected checks (N)**: runs only the ticked checks (the number of selected checks is shown on the button; disabled when no check is selected).
+- **Run all checks**: runs every defined check.
+- **run this check** (per row): runs only that check.
+
+Each run scans every `.txt` source file of every downloaded program folder, counts the occurrences of all the `SEARCH_STRING`s (case-insensitive, wildcards allowed, comments stripped, `EXCEPTION` lines excluded), stores one result row per program in the database and refreshes the semaphore of the check.
+
+### Check results panel
+
+Shows the stored results, one row per program/check (program, check id, result, occurrences, run timestamp), with rows colored according to the semaphore (red/green). The table is paginated (**First / Prev / Next / Last**).
+
+- **Refresh**: reloads the results from the database.
+- **Export results**: exports the **whole** results table (not just the visible page) to a CSV file.
+- **Clear results**: permanently deletes all stored results and resets the semaphores of the checks; a confirmation is required. The button is disabled when there are no results.
+
+The typical workflow is: define (or review) the checks in `codeSecurityChecks.txt` → search the programs with **Search program** or load them with **Import CSV** → download the sources with **Download Source** → run the checks (**Run all checks** or **Run selected checks**) → review, export or clear the results. Re-running a check replaces its previously stored results for that check.
 
 ## Settings
 

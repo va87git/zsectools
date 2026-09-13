@@ -262,6 +262,9 @@ export default function App() {
   const [csResults, setCsResults] = useState([]);
   const [csResultsTotal, setCsResultsTotal] = useState(0);
   const [csResultsPage, setCsResultsPage] = useState(0);
+  const [csImportLoading, setCsImportLoading] = useState(false);
+  const [csProgramsLimited, setCsProgramsLimited] = useState(false); // "limit reached" hint (search only)
+  const csImportFileRef = useRef(null);
 
   function navBtnStyle(active) {
     return {
@@ -2062,10 +2065,52 @@ async function executeRfcBatch() {
         body: JSON.stringify({ realm: selectedRealm.trim(), pattern: csProgramPattern.trim() })
       });
       setCsPrograms(r.rows || []);
+      setCsProgramsLimited(!!r.truncated || (r.rows?.length ?? 0) >= 500);
       setCsSearchMsg(`Found ${r.rows?.length ?? 0} program(s)${r.truncated ? ' (list truncated)' : ''}`);
       if (!r.rows?.length) setCsSearchMsg('No programs found with this pattern.');
     } catch (e) { setCsSearchErr(e.message); }
     finally { setCsSearchLoading(false); }
+  }
+
+  // "Import CSV": loads a one-column CSV (first row = header) with an explicit
+  // list of program names (useful when no single search pattern can select them).
+  // Every listed name is verified against TADIR; the found ones replace the
+  // "Found programs" table, the summary reports listed / found / not found.
+  function csImportCsvFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      if (csImportFileRef.current) csImportFileRef.current.value = '';
+      setCsSearchErr(''); setCsSearchMsg('');
+      const lines = String(ev.target.result || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+      // first row is the header (per the CSV format), the rest are program names;
+      // keep the first CSV field only (single-column file) and clean it up
+      const programs = [...new Set(
+        lines.slice(1)
+          .map(l => l.split(/[;,\t]/)[0].trim().replace(/^"(.*)"$/, '$1').trim())
+          .filter(Boolean)
+      )];
+      if (!programs.length) { setCsSearchErr('No program names found in the CSV file (the first row is skipped as header)'); return; }
+      setCsImportLoading(true);
+      try {
+        const r = await fetchJson('/api/code-security/check-programs', {
+          method: 'POST',
+          body: JSON.stringify({ realm: selectedRealm.trim(), programs })
+        });
+        setCsPrograms(r.found || []);
+        setCsProgramsLimited(false);
+        const missing = r.notFound || [];
+        let msg = `CSV import: ${r.listed} program(s) listed in the file, ${r.found?.length ?? 0} found in TADIR and loaded in the table, ${missing.length} not found`;
+        if (missing.length) {
+          const shown = missing.slice(0, 20).join(', ');
+          msg += `: ${shown}${missing.length > 20 ? `, … and ${missing.length - 20} more` : ''}`;
+        }
+        setCsSearchMsg(msg);
+        if (!r.found?.length) setCsSearchErr('None of the programs in the CSV file exists in TADIR.');
+      } catch (ex) { setCsSearchErr(ex.message); }
+      finally { setCsImportLoading(false); }
+    };
+    reader.readAsText(file);
   }
 
   async function csDownloadSource() {
@@ -2164,6 +2209,33 @@ async function executeRfcBatch() {
     finally { setCsRunLoading(''); }
   }
 
+  async function csRunSelectedChecks() {
+    setCsRunErr(''); setCsRunMsg('');
+    const ids = [...csSelectedChecks];
+    if (!ids.length) { setCsRunErr('Select at least one check (use the checkboxes)'); return; }
+    setCsRunLoading('selected');
+    try {
+      const r = await fetchJson('/api/code-security/run-selected-checks', {
+        method: 'POST',
+        body: JSON.stringify({ ids })
+      });
+      setCsSemaphores(old => ({ ...old, ...(r.semaphores || {}) }));
+      let msg = `Run complete: ${r.total} selected check(s) — ${r.redCount} red, ${r.greenCount} green`;
+      if (r.missingIds?.length) msg += ` — not found in the checks file: ${r.missingIds.join(', ')}`;
+      setCsRunMsg(msg);
+      csLoadResults(0);
+    } catch (e) { setCsRunErr(e.message); }
+    finally { setCsRunLoading(''); }
+  }
+
+  function csSelectAllChecks() {
+    setCsSelectedChecks(new Set(csChecks.map(c => c.id)));
+  }
+
+  function csDeselectAllChecks() {
+    setCsSelectedChecks(new Set());
+  }
+
   async function csLoadResults(page = 0) {
     setCsResultsPage(page);
     try {
@@ -2179,6 +2251,31 @@ async function executeRfcBatch() {
       next.has(checkId) ? next.delete(checkId) : next.add(checkId);
       return next;
     });
+  }
+
+  // Export the FULL results table as CSV (same download approach as the mapper export)
+  async function csExportResults() {
+    if (!csResultsTotal) { alert('No results to export.'); return; }
+    try {
+      const resp = await fetch(`${API_BASE}/api/code-security/results/export-csv`);
+      if (!resp.ok) { alert('Export failed'); return; }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `code_security_results_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  }
+
+  async function csClearResults() {
+    if (!window.confirm('Clear ALL check results?')) return;
+    try {
+      const r = await fetchJson('/api/code-security/results/clear', { method: 'POST' });
+      setCsResults([]); setCsResultsTotal(0); setCsResultsPage(0);
+      setCsSemaphores({});
+      setCsRunErr('');
+      setCsRunMsg(`Results cleared (${r.cleared ?? 0} row(s) deleted)`);
+    } catch (e) { setCsRunErr(e.message); }
   }
 
   // ── contest for sections: explicit dependencies for each view ──
@@ -2278,12 +2375,13 @@ async function executeRfcBatch() {
 
   const codeSecurityCtx = {
     selectedRealm, csProgramPattern, setCsProgramPattern,
-    csSearchLoading, csPrograms, csSearchMsg, csSearchErr, csDoSearch: csSearchPrograms,
+    csSearchLoading, csPrograms, csProgramsLimited, csSearchMsg, csSearchErr, csDoSearch: csSearchPrograms,
+    csImportLoading, csImportFileRef, csDoImportCsv: csImportCsvFile,
     csDownloadLoading, csDownloadMsg, csDownloadErr, csDownloadProgress, csDoDownload: csDownloadSource,
     csChecks, csChecksLoading, csChecksErr, csLoadChecks,
-    csSelectedChecks, csToggleCheck, csSemaphores,
-    csRunLoading, csRunCheck, csRunAllChecks, csRunMsg, csRunErr,
-    csResults, csResultsTotal, csResultsPage, csLoadResults
+    csSelectedChecks, csToggleCheck, csSelectAllChecks, csDeselectAllChecks, csSemaphores,
+    csRunLoading, csRunCheck, csRunAllChecks, csRunSelectedChecks, csRunMsg, csRunErr,
+    csResults, csResultsTotal, csResultsPage, csLoadResults, csExportResults, csClearResults
   };
 
   return (
