@@ -89,6 +89,8 @@ ZSecTools uses a single `.env` file in the project root for all environment-spec
 
 > **Note for Windows users**: when running via `run.bat` or the Windows services, the `.env` file is not loaded automatically by the batch scripts — environment variables are set directly inside those scripts. If you change a value in `.env`, also update the corresponding line in `run.bat` (or restart the services after editing `install-services.bat`).
 
+4. Copy `SAP-TABLE-LIST-example.txt` to `SAP-TABLE-LIST.txt`: this configuration file contains the list of all SAP tables shown in the ['Import SAP Tables'](./userguide.md#import-sap-tables) section. You can add or remove tables from `SAP-TABLE-LIST.txt` since it is gitignored. `SAP-TABLE-LIST-example.txt` is the template file; if any mandatory or useful table is added there in the future, it will be highlighted in the release notes.
+
 ## SAP Technical User
 
 ZSecTools connects to SAP systems using a dedicated technical user, whose credentials are configured in the **SAP Realms** section of the application.

@@ -78,10 +78,22 @@ import {
   mapRealmToSapConnection,
   pingSapWithConfig,
   readSapTable,
+  readAbapProgramSource,
   executeBapiBatch,
   getRfcSchema,
   listAvailableRfcs
 } from './sap.js';
+import {
+  readCodeSecurityChecks,
+  searchTadirPrograms,
+  filterProgramsInTadir,
+  downloadProgramsSource,
+  runCodeSecurityCheck,
+  runAllCodeSecurityChecks,
+  getCodeSecurityResults,
+  codeSecurityResultsTableExists,
+  clearCodeSecurityResults
+} from './codeSecurity.js';
 
 // Compute the frontend path based on the execution folder (App)
 import { fileURLToPath } from 'url'; // Keep this if needed for development, otherwise it can stay
@@ -202,9 +214,9 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/tables', async (req, res) => {
   try {
 
-// path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
-    // process.cwd() points to the main folder of your project
-    const tableFile = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
+    // path.join automatically uses the correct slashes ( \ for Windows, / for Linux)
+    const defaultPath = path.join(process.cwd(), 'SAP-TABLE-LIST.txt');
+    const tableFile = process.env.SAP_TABLE_LIST_PATH || defaultPath;
 
     const content = await fs.readFile(tableFile, 'utf8');
     const tables = content.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
@@ -491,7 +503,9 @@ app.post('/api/import-sap/tables', async (req, res) => {
         let options = [];
         switch (cleanName) {
           case 'TADIR':
-            options = ["PGMID EQ 'R3TR' AND OBJECT EQ 'TRAN'"];
+            // both transactions and programs are imported (Code security section
+            // searches programs with OBJECT = 'PROG')
+            options = ["PGMID EQ 'R3TR' AND ( OBJECT EQ 'TRAN' OR OBJECT EQ 'PROG' )"];
             break;
           case 'AGR_TEXTS':
             options = ["SPRAS EQ 'I' OR SPRAS EQ 'E'"];
@@ -695,7 +709,7 @@ app.post('/api/export-sap/tables-txt', async (req, res) => {
 
     //const txtContent = `# Table: ${first.tableName}\n${first.header}\n${first.rows.join('\n')}`;
 
-	  // NEW LOGIC: Also include the type comment we added in db.js
+          // NEW LOGIC: Also include the type comment we added in db.js
     // The correct order is: Table Comment, Types Comment, Header, Data
     const txtContent = [
       first.tableComment,
@@ -1686,6 +1700,183 @@ app.get('/api/mapper/results/export-csv', async (req, res) => {
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
   } finally { client.release(); }
+});
+
+// ── CODE SECURITY ─────────────────────────────────────────────────────────────
+
+// Search ABAP programs in sap_raw_{realm}_tadir (OBJECT = 'PROG')
+app.post('/api/code-security/search-programs', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    const pattern = String(req.body?.pattern || '').trim();
+    const limit = Number(req.body?.limit || 500);
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    if (!pattern) { res.status(400).json({ ok: false, error: 'program name pattern is required' }); return; }
+    const result = await searchTadirPrograms(realm, pattern, limit);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Verify an explicit list of program names against TADIR (used by "Import CSV",
+// for program lists that no single search pattern can express).
+// POST JSON body: { realm, programs: ['PROG1', 'PROG2', ...] }
+// Response: { ok, listed, found: [TADIR rows], notFound: ['NAME', ...] }
+app.post('/api/code-security/check-programs', async (req, res) => {
+  try {
+    const realm = String(req.body?.realm || '').trim();
+    const programs = Array.isArray(req.body?.programs) ? req.body.programs : [];
+    if (!realm) { res.status(400).json({ ok: false, error: 'realm is required' }); return; }
+    if (!programs.length) { res.status(400).json({ ok: false, error: 'programs list is required' }); return; }
+    const result = await filterProgramsInTadir(realm, programs);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// List the checks defined in CodeSecurity/codeSecurityChecks.txt
+app.get('/api/code-security/checks', async (_req, res) => {
+  try {
+    const checks = await readCodeSecurityChecks();
+    res.json({ ok: true, checks });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// SSE endpoint: downloads the ABAP source of EVERY program in the given list
+// (the rows of the frontend "Found programs" table) and of every include,
+// recursively. One sub-folder per program under CodeSecurity/.
+// (same live-progress approach as /api/sod/run-analysis-stream)
+// POST JSON body: { realm, programs: ['PROG1', 'PROG2', ...] }
+app.post('/api/code-security/download-source-stream', async (req, res) => {
+  const realm = String(req.body?.realm || '').trim();
+  const programs = Array.isArray(req.body?.programs)
+    ? req.body.programs.map((p) => String(p || '').trim()).filter(Boolean)
+    : [];
+
+  if (!realm) {
+    res.status(400).json({ ok: false, error: 'realm is required' });
+    return;
+  }
+  if (!programs.length) {
+    res.status(400).json({ ok: false, error: 'programs list is required (run a search first)' });
+    return;
+  }
+
+  const realmConfig = await getSapRealm(realm);
+  if (!realmConfig) {
+    res.status(404).json({ ok: false, error: `Realm not found: ${realm}` });
+    return;
+  }
+  const sapConfig = mapRealmToSapConnection(realmConfig);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  send({ type: 'start', total: programs.length });
+
+  try {
+    const result = await downloadProgramsSource(sapConfig, programs, (progress) => send({ ...progress }));
+    send({ type: 'done', ...result });
+  } catch (error) {
+    send({ type: 'error', error: error?.message || 'Code security source download failed' });
+  } finally {
+    res.end();
+  }
+});
+
+// Run a single check (by ID) against all downloaded program folders
+app.post('/api/code-security/run-check', async (req, res) => {
+  try {
+    const checkId = String(req.body?.checkId || '').trim();
+    if (!checkId) { res.status(400).json({ ok: false, error: 'checkId is required' }); return; }
+
+    const checks = await readCodeSecurityChecks();
+    const check = checks.find((c) => c.id === checkId);
+    if (!check) { res.status(404).json({ ok: false, error: `Check not found: ${checkId}` }); return; }
+
+    const result = await runCodeSecurityCheck(check);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Run every check defined in the config file
+app.post('/api/code-security/run-all-checks', async (_req, res) => {
+  try {
+    const result = await runAllCodeSecurityChecks();
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Run only the selected checks (frontend checkboxes)
+// POST JSON body: { ids: ['001', '004', ...] }
+app.post('/api/code-security/run-selected-checks', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map((i) => String(i || '').trim()).filter(Boolean)
+      : [];
+    if (!ids.length) { res.status(400).json({ ok: false, error: 'ids list is required (select at least one check)' }); return; }
+
+    const result = await runAllCodeSecurityChecks(ids);
+    const checks = await readCodeSecurityChecks();
+    const missingIds = ids.filter((id) => !checks.some((c) => c.id === id));
+    res.json({ ok: true, ...result, missingIds });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Stored results (paginated)
+app.get('/api/code-security/results', async (req, res) => {
+  try {
+    const limit = Number(req.query?.limit || 100);
+    const offset = Number(req.query?.offset || 0);
+    const result = await getCodeSecurityResults(limit, offset);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Export ALL stored results as a downloadable CSV (same streaming approach as
+// /api/mapper/results/export-csv)
+app.get('/api/code-security/results/export-csv', async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!(await codeSecurityResultsTableExists())) {
+      res.status(404).json({ ok: false, error: 'No results available' });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="code_security_results_${new Date().toISOString().split('T')[0]}.csv"`);
+    const BATCH = 500;
+    let batchOffset = 0;
+    let headerWritten = false;
+    while (true) {
+      const batch = await client.query(
+        `SELECT id, program, check_id, result, occurrences, ran_at
+         FROM code_security_results ORDER BY check_id, program LIMIT $1 OFFSET $2`,
+        [BATCH, batchOffset]
+      );
+      if (batch.rows.length === 0) break;
+      if (!headerWritten) {
+        res.write(Object.keys(batch.rows[0]).join('\t') + '\n');
+        headerWritten = true;
+      }
+      for (const row of batch.rows) {
+        res.write(Object.values(row).map(v => v === null || v === undefined ? '' : String(v)).join('\t') + '\n');
+      }
+      if (batch.rows.length < BATCH) break;
+      batchOffset += BATCH;
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+  } finally { client.release(); }
+});
+
+// Delete ALL stored results ("Clear results" button)
+app.post('/api/code-security/results/clear', async (_req, res) => {
+  try {
+    const cleared = await clearCodeSecurityResults();
+    res.json({ ok: true, cleared });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 const port = Number(process.env.PORT || 3000);

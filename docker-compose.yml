@@ -44,6 +44,8 @@ services:
       SAP_SYSNR: ${SAP_SYSNR:-}
       SAP_CLIENT: ${SAP_CLIENT:-}
       SAP_LANG: ${SAP_LANG:-EN}
+      SAP_TABLE_LIST_PATH: /etc/sap/SAP-TABLE-LIST.txt
+      CODE_SECURITY_ROOT: /etc/sap/CodeSecurity
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -52,7 +54,9 @@ services:
       # Set SAPNWRFC_HOST_PATH and SAPNWRFC_CONTAINER_PATH to real paths when needed.
       - ${SAPNWRFC_HOST_PATH}:${SAPNWRFC_CONTAINER_PATH}:ro
       # Mount SAP table list file
-      - ./SAP-TABLE-LIST.txt:/app/SAP-TABLE-LIST.txt:ro
+      - ./SAP-TABLE-LIST.txt:/etc/sap/SAP-TABLE-LIST.txt:ro
+      # Mount CodeSecurity Folder
+      - ./CodeSecurity:/etc/sap/CodeSecurity
     ports:
       - "${BACKEND_PORT:-3001}:3000"
 
