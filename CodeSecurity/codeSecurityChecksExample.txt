@@ -1,63 +1,116 @@
+#Some of the security patterns and regexes in this file are derived or adapted from:
+#https://github.com/log2-industrialist/ABAP_Evildoers
+#Copyright log2-industrialist
+#Licensed under the Apache License, Version 2.0 (the "License");
+#http://www.apache.org/licenses/LICENSE-2.0
+
 ID=001
 TEXT=check userid hardcoded in ABAP
-SEARCH_STRING=if sy-uname = '
+SEARCH_STRING=sy-uname = '
 SEARCH_STRING=' eq sy-uname
 SEARCH_STRING=sy-uname eq '
 SEARCH_STRING=' = sy-uname
 EXCEPTION=DDIC
-EXCEPTION=SAP
-EXCEPTION=TMSADMIN
 IS_DEFECTIVE=TRUE
+LONG_TEXT=It looks simple and pragmatic. It is neither secure nor maintainable.
+A hardcoded user comparison bypasses the SAP authorization concept entirely. The consequences:
+Not auditable. The decision does not appear in any standard authorization trace. SU53, role analysis and the security audit log are blind to it.
+Not scalable. Granting access to a second person means a code change and a transport - not a role assignment.
+Fragile under change. If the account is renamed, copied to a colleague, mis-assigned or compromised, the protected logic runs with no legitimate check behind it.
+Invisible in reviews. Because it never shows up in standard authorization checks, it tends to survive audits unnoticed.
+The likelihood is raised by everyday events (account misconfiguration, password compromise); the impact can be severe, because the protected action is usually one that should be reserved for a narrowly authorized role.
 
 ID=002
 TEXT=Roles hardcoded in custom tables
 SEARCH_STRING=Z*-AGR_NAME
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Inserting a list of SAP roles inside custom tables and subsequently checking their assignment to users completely bypasses standard SAP authorization logic.
+This leads to several issues, including the scalability of both the underlying authorization model and the program itself.
+SAP provides multiple standard mechanisms to implement custom authorization checks. Role names must never be hardcoded or checked directly within programs.
 
 ID=003
 TEXT=User-role assignment check
 SEARCH_STRING=AGR_USERS
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Under normal conditions, it is never necessary to check which roles are assigned to a user.
+Authorization checks must always be performed exclusively using the standard AUTHORITY-CHECK statement.
+A program that hardcodes checks for specific role (or user) names will cause various scalability issues, such as functional breakdowns if the authorization model is migrated or updated.
+The statement IF AGR_USERS-AGR_NAME EQ 'Z:ROLE1' is therefore incorrect and must be avoided.
 
 ID=004
 TEXT=Missing AUTHORITY-CHECK
 SEARCH_STRING=AUTHORITY-CHECK
 IS_DEFECTIVE=FALSE
+LONG_TEXT=In custom programs, it is always recommended to include at least one authorization check, even for read-only programs.
+A program that lacks authorization checks can be executed by any user who has access to run it, leaving read/write data exposed to security risks.
 
 ID=005
 TEXT=Internal, direct OS Command Call
 SEARCH_STRING=CALL 'SYSTEM'
 IS_DEFECTIVE=TRUE
+LONG_TEXT=CALL 'SYSTEM' lets a program execute OS commands on the application server.
+Under the wrong conditions it can let an attacker run arbitrary commands or code on the host without rights beyond those needed to start a report. The real risk appears when the command string is built from external input (OS command injection): the same statement then runs whatever the attacker supplies.
+This can compromise the integrity of both the SAP system and the underlying host - unauthorized code execution, data manipulation, privilege escalation. SAP has marked the call deprecated for custom reports.
 
 ID=006
 TEXT=Create and execute ABABP code dynamically
 SEARCH_STRING=GENERATE REPORT
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Dynamically generating ABAP code using GENERATE REPORT creates severe security and stability risks:
+Bypasses transport management and version control. Code generated at runtime is created outside the standard Transport Organizer (CTS). It leaves no version history, making it un-auditable and invisible to standard change management.
+Code injection vulnerability. If the dynamic code generation logic incorporates external or user-controllable input, an attacker can inject arbitrary ABAP statements, leading to full remote code execution (RCE).
+Bypasses static code analysis. Static security scanners (such as Code Inspector, ATC, or SAST tools) cannot analyze code that does not exist until runtime.
+Unpredictable runtime errors. Syntax errors in dynamically generated code result in immediate short dumps (SYNTAX_ERROR), threatening system availability.
 
 ID=007
 TEXT=Write source code directly in DB
 SEARCH_STRING=INSERT REPORT
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Directly inserting or modifying ABAP source code in the system repository using INSERT REPORT is a major security defect:
+Stealth code modification. It allows writing program source code directly into system tables, bypassing standard ABAP Workbench tools (SE38/SE80) and transport controls.
+Bypasses transport logs and governance. Changes made via INSERT REPORT are not tracked in transport requests, making them an ideal mechanism for hiding unauthorized backdoors or malicious modifications.
+Bypasses static code reviews. Dynamically injected or overwritten code evades static code quality checks and authorization traces.
+Risk of system corruption. Overwriting active program code in production can disrupt core business processes and destabilize the SAP system.
 
 ID=008
 TEXT=Dynamically calls sub-report
 SEARCH_STRING=SUBMIT (*)
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Executing reports using dynamic program names in the SUBMIT statement introduces dynamic control flow risks:
+Arbitrary code execution. If the program name is derived from user input, system configurations, or external parameters, an attacker can manipulate the input to execute unintended standard or custom reports.
+Authorization bypass. Calling transactions or reports dynamically can skip screen checks or context-specific authorization logic, allowing users to execute privileged reports beyond their assigned roles.
+Difficult static code analysis. Static code scanners cannot resolve the target program at compile time, leaving potential authorization gaps and data exposure undetected.
+Always validate program names against a strict whitelist before executing dynamic SUBMIT statements.
 
 ID=009
 TEXT=Start T-CODE skipping initial authority checks
 SEARCH_STRING=CALL TRANSACTION*AND SKIP FIRST SCREEN
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Using CALL TRANSACTION with the AND SKIP FIRST SCREEN addition bypasses critical initial checks:
+Skipping transaction start checks. Bypassing the initial screen can prevent standard SAP start checks (such as S_TCODE authorization checks or initial screen validation logic) from triggering properly.
+Bypassing mandatory parameter checks. Mandatory input fields and organizational checks usually enforced on the initial screen are completely skipped, leading to unintended processing states.
+Potential privilege escalation. Users might execute transaction functionality in processing modes they should not have direct access to, risking unauthorized data creation or modification.
+Ensure explicit AUTHORITY-CHECK statements are executed before invoking CALL TRANSACTION with skipped screens.
 
 ID=010
 TEXT=Run OS commands on Host
 SEARCH_STRING=SXPG_COMMAND_EXECUTE
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Executing operating system commands via SXPG_COMMAND_EXECUTE requires strict validation and control:
+OS Command Injection. If external parameters or user inputs are passed into additional_parameters without strict sanitization, attackers can inject OS-level commands (e.g., via shell command separators like ';' or '&').
+Full system compromise. Commands run with the privileges of the SAP Application Server OS user (e.g., <siddm> / sapadm). A successful attack grants access to the host file system, network interfaces, and database binaries.
+Bypasses SAP authorization layer. OS-level execution operates outside the standard SAP authorization concept (such as S_TABU_DIS or transaction locks).
+Always use predefined, strictly configured commands in transaction SM69/SM70 and thoroughly sanitize any runtime parameters.
 
 ID=011
 TEXT=Wrong logical handling based on systemID
 SEARCH_STRING=IF sy-sysid
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Branching business or security logic based on literal system IDs (sy-sysid = 'PRD' or 'DEV') is fragile and unmaintainable:
+Breaks during system copy or landscape changes. When production systems are refreshed, copied, or migrated (e.g., PRD to QA), hardcoded system ID conditions fail or behave unpredictably.
+Hidden environment logic. Security rules or functional switches buried inside sy-sysid checks are invisible to central system configuration, transport management, and auditors.
+Unmaintainable architecture. Changing landscape topology requires code modifications and transports rather than administrative configuration.
+Use standard SAP environment checks (such as function module AUTHORITY_CHECK_SYSTEM_TYPE or custom configuration tables) instead of hardcoding sy-sysid.
 
 ID=012
 TEXT=Potential exposing of password in a clear string
@@ -65,15 +118,87 @@ SEARCH_STRING=PASSWORD*'*'
 SEARCH_STRING=passwd*'*'
 SEARCH_STRING=pwd*'*'
 IS_DEFECTIVE=TRUE
+LONG_TEXT=A hardcoded password is a serious security risk:
+Permanently exposed. The secret is readable by every developer and admin with source access - and it lives on in every transport, backup and program version, effectively forever.
+Enables privilege abuse. Anyone who reads it can authenticate as that user, bypass intended controls and reach the systems and data the account can touch.
+Defeats credential hygiene. Password rotation, central identity management and auditable credential handling all become impossible the moment the secret is frozen into code.
+Violates accepted standards. It runs against BSI and OWASP guidance and is, for a production system, plainly critical.
 
 ID=013
 TEXT=Potential exposing to SQL Injection (dynamic where)
-SEARCH_STRING=SELECT*WHERE (* = * && *)
+SEARCH_STRING=SELECT*WHERE (* = *)
 EXCEPTION=CL_ABAP_DYN_PRG
 EXCEPTION=escape
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Constructing dynamic WHERE clauses by concatenating unvalidated strings exposes the database to SQL Injection:
+Unauthorized data access. Attackers who control inputs used in dynamic SQL conditions can alter query logic, retrieving sensitive data across clients or organizational units.
+Bypasses client separation and authorizations. Maliciously crafted input can bypass client handling (WHERE mandt = ...) or security filters applied in code.
+Mitigation. Always use the standard utility class CL_ABAP_DYN_PRG (e.g., methods check_whitelist, sanitize_web_input, or quote) to validate and sanitize dynamic SQL parameters prior to query execution.
 
 ID=014
 TEXT=Potential exposing to SQL Injection (dynamic table name)
 SEARCH_STRING=FROM (*)
 IS_DEFECTIVE=TRUE
+LONG_TEXT=Using dynamic table names in Open SQL queries without strict validation creates severe SQL Injection vulnerabilities:
+Arbitrary table access. If the table name passed to the FROM clause is controlled by external parameters or user input, an attacker can query restricted system tables (e.g., USR02, PA0008, or financial tables).
+Bypasses static analysis and authorizations. Dynamic table names prevent static code analyzers from auditing table access rights and bypass standard S_TABU_DIS authorization checks.
+Mitigation. Always validate dynamic table names against an allowed whitelist using CL_ABAP_DYN_PRG=>check_table_name_str before executing the query.
+
+ID=015
+TEXT=Reading the legacy password hash (USR02-BCODE)
+SEARCH_STRING=bcode*usr02
+SEARCH_STRING=usr02*bcode
+IS_DEFECTIVE=TRUE
+LONG_TEXT=USR02-BCODE holds a password hash based on old, cryptographically weak algorithms. Pulling it into custom code is a problem on several levels:
+Weak hash, offline attack. BCODE hashes are comparatively easy to attack with today's methods.
+Wrong layer. Processing password hashes in application code violates the separation of authentication logic from application logic
+Undermines modern controls. Using BCODE can sidestep or weaken stronger hashing
+Compliance exposure. SAP has classified BCODE as insecure for a long time
+
+ID=016
+TEXT=BREAK-POINT in production code
+SEARCH_STRING=BREAK-POINT
+SEARCH_STRING=BREAK
+IS_DEFECTIVE=TRUE
+LONG_TEXT=Breakpoints are a development and debugging tool. Surviving into production, they create real operational and security risk:
+Availability. A hit breakpoint halts the business transaction abruptly. Frozen or aborted processes affect system availability and can cause follow-on damage.
+Authorization bypass. A user with debug-change rights who lands on a breakpoint can inspect and alter variables - including the results of authorization checks - and so step around protections.
+Data exposure. The debugger exposes the full runtime state, including sensitive data in memory at that moment.
+An unnecessary door. Even unused, it is attack surface that should not exist in production. Best practice and BSI guidance are unambiguous: breakpoints belong in development and test only.
+(The bare BREAK <username> form is just as relevant as BREAK-POINT.)
+
+ID=017
+TEXT=Hardcoded URL (CREATE_BY_URL)
+SEARCH_STRING=create_by_url
+IS_DEFECTIVE=TRUE
+LONG_TEXT=An external service is addressed by a fixed URL written directly into the source.
+No central management. A hardcoded URL cannot be governed centrally or restricted to trusted systems. If the target changes - or is changed maliciously - data can flow out unnoticed.
+Weak or absent transport security. Without explicit TLS and certificate handling (and http:// in the example says it all), the connection can be intercepted or manipulated.
+Bypasses the security perimeter. Direct calls from code skip the central interfaces, proxies and gateways that are supposed to handle authentication, logging and monitoring.
+No governance, no flexibility. Certificate, header or endpoint-policy changes cannot be rolled out centrally; each one becomes a code change and a transport.
+
+ID=018
+TEXT=Writing to the repository source (REPOSRC)
+SEARCH_STRING=UPDATE REPOSRC
+SEARCH_STRING=INSERT REPOSRC
+SEARCH_STRING=MODIFY REPOSRC
+IS_DEFECTIVE=TRUE
+LONG_TEXT=REPOSRC holds the uncompiled source of the ABAP programs in the system. Reading it is technically possible and usually harmless; writing to it is forbidden by the SAP standard and can only be forced through Native SQL (EXEC SQL) or a comparable bypass.
+While a read poses little risk (source is visible via SE38/SE80 anyway), a write is extremely dangerous:
+Stealth tampering. A write can overwrite other programs' source — injecting a backdoor or silently replacing whole reports.
+Invisible to governance. Changes made this way happen outside the transport system, so they appear in no transport request, no Workbench documentation and no version history. That makes them an ideal hard-to-detect backdoor or sabotage mechanism.
+Strong malicious indicator. SAP explicitly write-protects REPOSRC; using EXEC SQL to defeat that protection is a strong signal of either malicious manipulation or a grave design error.
+
+ID=019
+TEXT=Hardcoded client comparison (IF sy-mandt = '…')
+SEARCH_STRING=sy-mandt = '
+SEARCH_STRING=sy-mandt EQ
+SEARCH_STRING=EQ sy-mandt
+SEARCH_STRING=' = sy-mandt
+IS_DEFECTIVE=TRUE
+LONG_TEXT=Behaviour is switched on a literal client number baked into the source.
+Breaks on client operations. After a client copy or refresh (100 → 200), the logic silently changes or disappears. The code now behaves differently from what its author intended, with no error and no log.
+Invisible environment logic. "This only runs in the production client" is a meaningful business and security statement — but buried in an IF, it is invisible to configuration management, change control and audit.
+Unmaintainable. Changing the target client requires a code change and a transport instead of a configuration entry.
+Often a smell for worse. A sy-mandt gate frequently sits in front of something the developer did not want to run everywhere — exactly the kind of logic that deserves explicit governance, not a hidden literal.
+

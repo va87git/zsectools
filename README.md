@@ -23,6 +23,7 @@
 - [User Guide](#user-guide)
 - [Contributing](#contributing)
 - [License](#license)
+- [Third-Party Components & Acknowledgments](#third-party-components--acknowledgments)
 
 ## About
 
@@ -178,3 +179,9 @@ Before start contributing, please see [`Contributing guideline`](./.github/CONTR
 ## License
 
 This project is released under a custom open-source license: the code is free to use, modify, and redistribute, on the condition that no fee is charged for its distribution, sale, or inclusion in commercial packages. Any redistribution must remain entirely free of charge. See [`LICENSE`](./LICENSE) for the full text.
+
+## Third-Party Components & Acknowledgments
+
+This project includes detection patterns and rules derived from third-party open-source projects:
+
+* **ABAP_Evildoers**: ABAP security detection patterns adapted from [ABAP_Evildoers](https://github.com/log2-industrialist/ABAP_Evildoers) by log2-industrialist. Licensed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0) (see [`LICENSES/Apache-2.0.txt`](./LICENSES/Apache-2.0.txt)).
