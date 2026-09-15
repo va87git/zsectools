@@ -158,7 +158,7 @@ Compliance exposure. SAP has classified BCODE as insecure for a long time
 ID=016
 TEXT=BREAK-POINT in production code
 SEARCH_STRING=BREAK-POINT
-SEARCH_STRING=BREAK
+SEARCH_STRING=BREAK *.
 IS_DEFECTIVE=TRUE
 LONG_TEXT=Breakpoints are a development and debugging tool. Surviving into production, they create real operational and security risk:
 Availability. A hit breakpoint halts the business transaction abruptly. Frozen or aborted processes affect system availability and can cause follow-on damage.
