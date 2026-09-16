@@ -10,6 +10,8 @@ export default function RfcSection({ ctx }) {
   setSelectedRfc
   } = ctx;
 
+  const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 'bold' });
+
     const handleRfcReset = () => {
   setSelectedRfc('');       // Reset BAPI selection
   setRfcSchema(null);       // Remove displayed schema
@@ -118,21 +120,24 @@ export default function RfcSection({ ctx }) {
                       </div>
                     )}
 
-          <label style={{ display: 'block', marginBottom: 6 }}>Upload CSV/TSV File</label>
-          <input
-            ref={rfcFileInputRef} // Added to reset the input
-            type="file"
-            accept=".csv,.tsv,.txt"
-            onChange={handleRfcFileUpload}
-            disabled={!selectedRfc}
-            style={{
-            marginBottom: 12,
-            marginRight: 12,
-            width: '70px',
-            overflow: 'hidden',
-            color: 'transparent'   // Makes the remaining text transparent for safety across browsers
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Upload CSV/TSV File</span>
+            <input
+              ref={rfcFileInputRef} // Added to reset the input
+              type="file"
+              accept=".csv,.tsv,.txt"
+              onChange={handleRfcFileUpload}
+              disabled={!selectedRfc}
+              style={{ display: 'none' }}
+            />
+            <button
+              style={btnStyle('var(--text-muted)')}
+              onClick={() => rfcFileInputRef.current?.click()}
+              disabled={!selectedRfc}
+            >
+              Import CSV
+            </button>
+          </div>
 
           <button
             onClick={executeRfcBatch}
