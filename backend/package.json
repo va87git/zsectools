@@ -1,6 +1,6 @@
 {
   "name": "zsectools-backend",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "bin": "src/server.js",
   "private": true,
   "type": "module",

@@ -220,7 +220,9 @@ export const RFC_SCHEMAS = {
         },
         examples: {
           // introduction text
-          note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.\n\nATTENTION: Be sure roles master language match your current value. If not, change it first with previuos RFC: Change Role master language',
+          note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.\n\nATTENTION: Be sure roles master language match your current value.' +
+            ' If not, change it first with any other tool (eCATT, or implement program Z_ROLE_SET_MASTERLANG with SAP note 854311.' +
+            '\n\nATTENTION2: Roles\' log text/extended description will be DELETED, as this standard BAPI does not provide an \'append\'/\'patch\' mode!',
           // header and examples
           header: ['ACTIVITY_GROUP', 'SPRAS', 'TEXT'],
           rows: [
