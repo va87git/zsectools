@@ -185,6 +185,51 @@ export const RFC_SCHEMAS = {
             ]
           }
   },
+/*
+//this is NOT remote enabled
+  'RFC_change_role_master_language': {
+    name: 'Change Role master language',
+    bapi: 'PRGN_SET_AGR_ATTRIBUTES',
+    requiredFields: ['ACTIVITY_GROUP', 'MASTER_LANGUAGE'],
+    optionalFields: [],
+    description: 'Change Role master language',
+    fixedValues: {},
+    examples: {
+      // introduction text
+      note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
+      // header and examples
+      header: ['ACTIVITY_GROUP', 'MASTER_LANGUAGE'],
+      rows: [
+        ['ZS:CUST-MD', 'EN'],
+        ['ZS:CUST-DR', 'IT'],
+        ['ZS:CUST-FE', 'DE']
+      ]
+    }
+  },
+  */
+  'RFC_change_role_short_description': {
+    name: 'Change Role short description',
+    bapi: 'PRGN_RFC_CHANGE_TEXTS',
+    requiredFields: ['ACTIVITY_GROUP', 'SPRAS', 'TEXT'],
+    optionalFields: [],
+    description: 'Change Role short description',
+    fixedValues: { NO_DIALOG: 'X' },
+    derivedFields: { AGR_NAME: 'ACTIVITY_GROUP' },
+    tables: {
+    'TEXTS': ['AGR_NAME', 'SPRAS', 'TEXT']
+        },
+        examples: {
+          // introduction text
+          note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.\n\nATTENTION: Be sure roles master language match your current value. If not, change it first with previuos RFC: Change Role master language',
+          // header and examples
+          header: ['ACTIVITY_GROUP', 'SPRAS', 'TEXT'],
+          rows: [
+            ['ZS:CUST-MD', 'EN', 'Customer Master Data'],
+            ['ZS:VEND-MD', 'EN', 'Vendor Master Data'],
+            ['ZS:VEND-MD', 'DE', 'Vendor Master Data']
+          ]
+        }
+  },
         'RFC_create_user': {
     name: 'Create Users',
     bapi: 'BAPI_USER_CREATE',
@@ -573,6 +618,14 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
   for (const field of schema.requiredFields) {
     if (parameters[field] === undefined || parameters[field] === null) {
       throw new Error(`Missing required field: ${field}`);
+    }
+  }
+
+  if (schema.derivedFields) {
+    for (const [targetField, sourceField] of Object.entries(schema.derivedFields)) {
+      if (parameters[targetField] === undefined && parameters[sourceField] !== undefined) {
+        parameters[targetField] = parameters[sourceField];
+      }
     }
   }
 
