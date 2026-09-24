@@ -46,6 +46,11 @@ services:
       SAP_LANG: ${SAP_LANG:-EN}
       SAP_TABLE_LIST_PATH: /etc/sap/SAP-TABLE-LIST.txt
       CODE_SECURITY_ROOT: /etc/sap/CodeSecurity
+      # Optional: force the uid/gid used by the server process inside the container.
+      # By default the entrypoint reuses the owner of the mounted CodeSecurity folder
+      # (so files created are managed by the host user), falling back to 1000:1000.
+      # HOST_UID: 1000
+      # HOST_GID: 1000
     volumes:
       - ./backend:/app
       - /app/node_modules
