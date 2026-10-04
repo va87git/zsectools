@@ -46,7 +46,7 @@ To use ZSecTools, you need to provide the official SAP connectivity libraries, w
   If the link above is unavailable, please visit the [SAP support page directly](https://support.sap.com/en/product/connectors/nwrfcsdk.html).
 
 - **Installation**: place the library files (`sapnwrfc.dll` / `.so`) in a folder on the host machine and set `SAPNWRFC_HOST_PATH` accordingly in your `.env` file (see [Configuration](#configuration)).
-> **Note**: you can also save the SDK path from the app's **Health Checks** panel so it can be applied automatically on backend startup, but tihs works for Windows and Linux only. On Docker the volume  with library files must be mounted, so please mantain your `.env` file in this case.
+> **Note**: you can also view the SDK path from the app's **Health Checks** panel in order to quick check your configuration.
 
 ## Configuration
 

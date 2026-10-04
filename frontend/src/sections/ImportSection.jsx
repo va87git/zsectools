@@ -8,6 +8,7 @@ export default function ImportSection({ ctx }) {
   displayTotal, exportLoading, exportStatisticsTxt, exportTablesTxt,
   importErr, importLoading, importMsg, importProgress,
   importStatistics, importStatisticsTxt, importTables, importTablesTxt,
+  importTablesTxtFolder,
   importTxtLoading, loadAggregatedStats, loadImportedTableRows, selectedRealm,
   selectedStatsBatch, selectedTables, setDisplayPage, setDisplayRows,
   setDisplayTableName, setDisplayTotal, setSelectedStatsBatch, setSelectedTables,
@@ -36,19 +37,25 @@ export default function ImportSection({ ctx }) {
               <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || importLoading} onClick={importTables}>Download selected Tables from SAP</button>
               <button style={btnStyle('var(--accent)')} disabled={!selectedRealm || !selectedTables.length || exportLoading} onClick={exportTablesTxt}>Export TXT</button>
               <button style={btnStyle('var(--text-muted)')} disabled={!selectedRealm || importTxtLoading} onClick={importTablesTxt}>Import TXT</button>
+              <button
+                style={btnStyle('var(--text-muted)')}
+                disabled={!selectedRealm || importTxtLoading}
+                onClick={importTablesTxtFolder}
+                title="Select a folder: every .txt file inside it with a valid '# Table:' first line is imported (one table per file, as produced by Export TXT)"
+              >Import TXT Folder</button>
             </div>
-            {importLoading ? (
+            {(importLoading || importTxtLoading) ? (
               <div style={{ marginTop: 10 }}>
                 <div style={{ background: 'var(--border-strong)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
                   <div style={{
                     background: 'var(--success)',
                     height: 20,
-                    width: `${(importProgress.current / importProgress.total) * 100}%`,
+                    width: `${importProgress.total ? (importProgress.current / importProgress.total) * 100 : 0}%`,
                     transition: 'width 0.3s ease'
                   }} />
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  Downloading table {importProgress.currentTable} ({importProgress.current}/{importProgress.total})
+                  {importLoading ? 'Downloading table' : 'Importing table'} {importProgress.currentTable ? `${importProgress.currentTable} ` : ''}({importProgress.current}/{importProgress.total})
                 </p>
               </div>
             ) : null}

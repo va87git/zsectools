@@ -1026,6 +1026,9 @@ async function executeRfcBatch() {
     }
   }
 
+  // FIX #42: Import TXT now accepts selecting multiple files at once.
+  // A dedicated button (Import TXT Folder) allows selecting a whole folder.
+  // Both paths share importTablesTxtFiles below.
   async function importTablesTxt() {
   setImportErr('');
   setImportMsg('');
@@ -1037,46 +1040,120 @@ async function executeRfcBatch() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.txt';
+  input.multiple = true;
   input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    await importTablesTxtFiles(files);
+  };
+  input.click();
+}
 
-    setImportTxtLoading(true);
-    try {
+  async function importTablesTxtFolder() {
+  setImportErr('');
+  setImportMsg('');
+  if (!selectedRealm.trim()) {
+    setImportErr('Select a realm first');
+    return;
+  }
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.webkitdirectory = true;
+  input.multiple = true;
+  input.onchange = async (e) => {
+    const allFiles = Array.from(e.target.files || []);
+    const files = allFiles.filter(f => f.name.toLowerCase().endsWith('.txt'));
+    if (!files.length) {
+      setImportErr('No .txt files found in the selected folder');
+      return;
+    }
+    await importTablesTxtFiles(files);
+  };
+  input.click();
+}
+
+  async function importTablesTxtFiles(files) {
+  setImportTxtLoading(true);
+  setImportProgress({ current: 0, total: files.length, currentTable: '' });
+  try {
+    // Read every file and detect its table from the '# Table:' header
+    // (first line of each file, exactly as written by Export TXT).
+    // DO NOT filter rows here! Send whole file to backend.
+    // The backend already knows how to extract the table name and types from the comments.
+    const parsed = [];
+    for (const file of files) {
       const text = await file.text();
-
-      // DO NOT filter rows here! Send whole file to backend.
-      // The backend already knows how to extract the table name and types from the comments.
-
-      // Extract the table name from the file (optional, if you want to use it for the API)
-      const lines = text.split(/\r?\n/);
       let tableName = null;
-      for (const line of lines) {
+      for (const line of text.split(/\r?\n/)) {
         if (line.startsWith('# Table:')) {
           tableName = line.replace('# Table:', '').trim();
           break; // Found, exit
         }
       }
-
-      if (!tableName) {
-        throw new Error('Invalid TXT format: missing # Table: header');
-      }
-
-      const result = await fetchJson('/api/import-sap/tables-txt', {
-        method: 'POST',
-        // Send whole original text ('text')
-        body: JSON.stringify({ realm: selectedRealm.trim(), tableName, txtContent: text })
-      });
-
-      setImportMsg(`Imported ${result.imported} rows from ${tableName}`);
-    } catch (err) {
-      setImportErr(err.message);
-    } finally {
-      setImportTxtLoading(false);
+      parsed.push({ fileName: file.name, tableName, text });
     }
-  };
-  input.click();
+
+    // Split into importable files and rejected ones (invalid header or duplicate table)
+    const importable = [];
+    const rejected = [];
+    const seenTables = new Set();
+    for (const p of parsed) {
+      if (!p.tableName) {
+        rejected.push(`${p.fileName} (Invalid TXT format: missing # Table: header)`);
+      } else if (seenTables.has(p.tableName)) {
+        rejected.push(`${p.fileName} (duplicate table ${p.tableName}, skipped)`);
+      } else {
+        seenTables.add(p.tableName);
+        importable.push(p);
+      }
+    }
+
+    if (importable.length === 0) {
+      setImportErr(`No importable table file found in ${files.length} file(s): ${capList(rejected)}`);
+      return;
+    }
+
+    // Import file by file (one API call per table), with a progress bar
+    const imported = [];
+    const failed = [...rejected];
+    let totalRows = 0;
+    for (let i = 0; i < importable.length; i++) {
+      const item = importable[i];
+      setImportProgress({ current: i + 1, total: importable.length, currentTable: item.tableName });
+      try {
+        const result = await fetchJson('/api/import-sap/tables-txt', {
+          method: 'POST',
+          // Send whole original text ('text')
+          body: JSON.stringify({ realm: selectedRealm.trim(), tableName: item.tableName, txtContent: item.text })
+        });
+        imported.push(item.tableName);
+        totalRows += result.imported || 0;
+      } catch (fileErr) {
+        failed.push(`${item.fileName} (${fileErr.message})`);
+      }
+    }
+
+    if (imported.length === 0) {
+      setImportErr(`No table imported from ${files.length} file(s): ${capList(failed)}`);
+      return;
+    }
+
+    let msg = `Imported ${imported.length} table(s), ${totalRows} row(s) total from ${files.length} file(s): ${capList(imported)}`;
+    if (failed.length > 0) {
+      msg += `. ${failed.length} file(s) failed: ${capList(failed)}`;
+    }
+    setImportMsg(msg);
+  } finally {
+    setImportTxtLoading(false);
+    setImportProgress({ current: 0, total: 0, currentTable: '' });
+  }
 }
+
+  function capList(arr, max = 15) {
+    const shown = arr.slice(0, max).join(', ');
+    return arr.length > max ? `${shown}, ...and ${arr.length - max} more` : shown;
+  }
 
   async function importStatisticsTxt() {
     setImportErr('');
@@ -2310,6 +2387,7 @@ async function executeRfcBatch() {
     displayTotal, exportLoading, exportStatisticsTxt, exportTablesTxt,
     importErr, importLoading, importMsg, importProgress,
     importStatistics, importStatisticsTxt, importTables, importTablesTxt,
+    importTablesTxtFolder,
     importTxtLoading, loadAggregatedStats, loadImportedTableRows, selectedRealm,
     selectedStatsBatch, selectedTables, setDisplayPage, setDisplayRows,
     setDisplayTableName, setDisplayTotal, setSelectedStatsBatch, setSelectedTables,
