@@ -29,13 +29,23 @@ function mapSapTypeToPg(sapType, length) {
   }
 }
 
+// Control characters not allowed in imported values (NUL included). \t \n \r are handled by the COPY escaping.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
 // Escape special characters for COPY format
 function escapeCopyValue(value) {
   if (value === null || value === undefined || value === '') {
     return '\\N'; // NULL marker for COPY
   }
 
-  let str = String(value);
+  // PostgreSQL TEXT cannot contain NUL (0x00) and RFC_READ_TABLE may return it (or other
+  // control chars) for unprintable/uninitialized CHAR content (e.g. USR01-MENUE of DDIC).
+  // Tab/LF/CR are kept here because they are escaped below.
+  let str = String(value).replace(CONTROL_CHARS_RE, '');
+  if (str === '') {
+    return '\\N';
+  }
 
   // Escape backslash first, then other special chars
   str = str.replace(/\\/g, '\\\\');
@@ -52,7 +62,10 @@ function escapeCopyValue(value) {
 // Returns null if the date is invalid (e.g., 0404-14-17, 00000000, or beyond PostgreSQL limits)
 // PostgreSQL DATE supports years from 4713 BC to 4714 AD
 function convertSapDate(value) {
-  if (!value || value.length !== 8 || value === '00000000') {
+  value = value == null ? '' : String(value).replace(CONTROL_CHARS_RE, '').trim();
+  // Must be exactly 8 digits: anything else (e.g. text from a misaligned column) is NOT a date.
+  // (parseInt() returns NaN on text and NaN passes all range checks below, so check here.)
+  if (!/^\d{8}$/.test(value) || value === '00000000') {
     return null;
   }
 
@@ -84,7 +97,8 @@ function convertSapDate(value) {
 // Convert SAP time (HHMMSS) to PostgreSQL time format
 // Returns null if the time is invalid (e.g., 25:99:99, 000000, etc.)
 function convertSapTime(value) {
-  if (!value || value.length !== 6 || value === '000000') {
+  value = value == null ? '' : String(value).replace(CONTROL_CHARS_RE, '').trim();
+  if (!/^\d{6}$/.test(value) || value === '000000') {
     return null;
   }
 
@@ -108,8 +122,8 @@ function convertSapPacked(value) {
     return null;
   }
 
-  // Remove leading/trailing spaces and check if it's a valid number
-  const trimmed = String(value).trim();
+  // Remove control chars and leading/trailing spaces and check if it's a valid number
+  const trimmed = String(value).replace(CONTROL_CHARS_RE, '').trim();
 
   // Check if it's a valid numeric string (digits, optional minus sign, optional decimal point)
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
@@ -123,6 +137,22 @@ function convertSapPacked(value) {
   }
 
   // Invalid format, return null to avoid DB errors
+  return null;
+}
+
+// Safe converters for I/b (integer) and F (float) fields: invalid content -> NULL
+function convertSapInteger(value) {
+  const trimmed = String(value).replace(CONTROL_CHARS_RE, '').trim();
+  // SAP may return a trailing minus sign for negative numbers (e.g. "5-")
+  if (/^-?\d+$/.test(trimmed)) return trimmed;
+  if (/^\d+-$/.test(trimmed)) return `-${trimmed.slice(0, -1)}`;
+  return null;
+}
+
+function convertSapFloat(value) {
+  const trimmed = String(value).replace(CONTROL_CHARS_RE, '').trim();
+  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(trimmed)) return trimmed;
+  if (/^\d+(\.\d+)?-$/.test(trimmed)) return `-${trimmed.slice(0, -1)}`;
   return null;
 }
 
@@ -218,6 +248,10 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
             value = convertSapTime(value);
           } else if (f.type === 'P' && value) {
             value = convertSapPacked(value);
+          } else if ((f.type === 'I' || f.type === 'b' || f.type === 's') && value) {
+            value = convertSapInteger(value);
+          } else if (f.type === 'F' && value) {
+            value = convertSapFloat(value);
           }
 
           return escapeCopyValue(value);
@@ -235,12 +269,16 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
   // Execute COPY command using pg-copy-streams
   const client = await pool.connect();
   const ingestStream = copyStreams.from(copyCommand);
+  let copyError = null;
 
   try {
     const copyPromise = new Promise((resolve, reject) => {
       ingestStream.on('finish', resolve);
       ingestStream.on('error', reject);
     });
+    // If pipeline() fails first, copyPromise is never awaited: without this no-op handler its
+    // rejection would be "unhandled" and Node would terminate the whole backend process.
+    copyPromise.catch(() => {});
 
     client.query(ingestStream);
 
@@ -256,8 +294,12 @@ export async function replaceImportedTableRows(realm, tableName, fields, rows, i
     );
 
     await copyPromise;
+  } catch (err) {
+    copyError = err;
+    throw err;
   } finally {
-    client.release();
+    // Passing the error destroys the connection instead of returning a broken one to the pool
+    client.release(copyError || undefined);
   }
 }
 

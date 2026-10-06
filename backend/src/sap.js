@@ -442,10 +442,39 @@ export async function pingSapWithConfig(config, start = Date.now()) {
   }
 }
 
-function parseReadTableRows(readTableResult, delimiter) {
+// Control characters (NUL included) that RFC_READ_TABLE may return for unprintable CHAR content.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_RE = /[\u0000-\u001F\u007F]/g;
+
+function parseReadTableRows(readTableResult, delimiter, tableName = '') {
   const fields = readTableResult?.FIELDS || [];
   const dataRows = readTableResult?.DATA || [];
   const fieldNames = fields.map((f) => f.FIELDNAME);
+  const rows = [];
+  let skipped = 0;
+
+  for (let r = 0; r < dataRows.length; r += 1) {
+    // Remove NUL/control chars BEFORE splitting: they would make the PostgreSQL COPY fail
+    const raw = String(dataRows[r]?.WA || '').replace(CONTROL_CHARS_RE, '');
+    const values = raw.split(delimiter);
+
+    // More values than fields: the delimiter is also present inside a field value, so all the
+    // following columns would be shifted/misassigned. Skip the record and log it.
+    if (values.length > fieldNames.length) {
+      skipped += 1;
+      console.warn(
+        `[import] ${tableName || 'table'}: record ${r + 1} skipped (found ${values.length} values for ` +
+        `${fieldNames.length} fields, delimiter '${delimiter}' present in data): ${raw.slice(0, 200)}`
+      );
+      continue;
+    }
+
+    const obj = {};
+    for (let i = 0; i < fieldNames.length; i += 1) {
+      obj[fieldNames[i]] = (values[i] || '').trim();
+    }
+    rows.push(obj);
+  }
 
   return {
     fields: fields.map(f => ({
@@ -454,15 +483,9 @@ function parseReadTableRows(readTableResult, delimiter) {
       length: parseInt(f.LENGTH, 10) || 0,
       offset: parseInt(f.OFFSET, 10) || 0
     })),
-    rows: dataRows.map((entry) => {
-      const raw = String(entry.WA || '');
-      const values = raw.split(delimiter);
-      const obj = {};
-      for (let i = 0; i < fieldNames.length; i += 1) {
-        obj[fieldNames[i]] = (values[i] || '').trim();
-      }
-      return obj;
-    })
+    rows,
+    skipped,
+    receivedCount: dataRows.length
   };
 }
 
@@ -495,11 +518,14 @@ export async function readSapTable(config, tableName, fieldsToSelect = [], rowsk
     }
 
     const result = await client.call('RFC_READ_TABLE', rfcOptions);
-    const parsed = parseReadTableRows(result, delimiter);
+    const parsed = parseReadTableRows(result, delimiter, tableName);
 
     return {
       fields: parsed.fields,
       rows: parsed.rows,
+      skippedRows: parsed.skipped,
+      // rows returned by SAP in this batch (before skipping): used for pagination
+      receivedCount: parsed.receivedCount,
       totalCount: result?.TOTALROWS || parsed.rows.length
     };
   } finally {

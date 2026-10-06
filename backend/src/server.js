@@ -98,6 +98,12 @@ import {
 // Compute the frontend path based on the execution folder (App)
 import { fileURLToPath } from 'url'; // Keep this if needed for development, otherwise it can stay
 
+// Safety net: a failure in a single background operation (e.g. one table copy) must not
+// terminate the whole backend process.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled promise rejection:', reason);
+});
+
 // ── SAP NW RFC SDK Initialization from .env ──────────────────────────────
 function initSapSdkFromEnv() {
   const sdkPath = String(process.env.SAPNWRFC_HOME || '').trim();
@@ -521,15 +527,19 @@ app.post('/api/import-sap/tables', async (req, res) => {
 
         // Iterative download with ROWSKIPS and ROWCOUNT
         let totalRowsImported = 0;
+        let totalRowsSkipped = 0;
         let rowSkips = 0;
         const rowCount = 100000;
         let hasMore = true;
         let firstBatch = true;
 
         while (hasMore) {
-          const { fields, rows } = await readSapTable(sapConfig, cleanName, fieldsToSelect, rowSkips, rowCount, options);
+          const { fields, rows, skippedRows = 0, receivedCount = rows.length } =
+            await readSapTable(sapConfig, cleanName, fieldsToSelect, rowSkips, rowCount, options);
 
-          if (rows.length === 0) {
+          // Nothing returned by SAP: end of table. (Use receivedCount, not rows.length: a batch
+          // where every record was skipped is not the end of the table.)
+          if (receivedCount === 0) {
             hasMore = false;
             break;
           }
@@ -538,18 +548,24 @@ app.post('/api/import-sap/tables', async (req, res) => {
           await replaceImportedTableRows(realm, cleanName, fields, rows, !firstBatch);
 
           totalRowsImported += rows.length;
+          totalRowsSkipped += skippedRows;
           rowSkips += rowCount; // Increment by the requested count per SAP spec
           firstBatch = false;
 
           // If we got fewer rows than requested, we've reached the end
-          if (rows.length < rowCount) {
+          if (receivedCount < rowCount) {
             hasMore = false;
           }
         }
 
         tableResult.success = true;
         tableResult.rowCount = totalRowsImported;
+        if (totalRowsSkipped > 0) {
+          tableResult.skippedRows = totalRowsSkipped;
+          console.warn(`[import] ${cleanName}: ${totalRowsSkipped} record(s) skipped (see warnings above)`);
+        }
       } catch (err) {
+        console.error(`[import] ${cleanName} failed: ${err?.message || err}`);
         tableResult.error = err.message;
       } finally {
         results.push(tableResult);
