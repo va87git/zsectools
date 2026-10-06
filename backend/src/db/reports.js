@@ -405,15 +405,16 @@ export async function executeReport(realm, reportType, options = {}) {
   }
 
   // Compute project date = realm_reference_date – options.days
+  // 'YYYY-MM-DD' strings parse as UTC midnight: use UTC setters to avoid DST/timezone shifts
   let projectDate = realmConfig.realm_reference_date;
   if (!projectDate) {
     projectDate = new Date();
   } else {
-    projectDate = new Date(projectDate);
+    projectDate = new Date(String(projectDate).slice(0, 10));
   }
   const sProjectDate = projectDate.toISOString().split('T')[0]; //project date as a string for ROLE06
   const deltaDays = Number(options.days) || 0;
-  projectDate.setDate(projectDate.getDate() - deltaDays);
+  projectDate.setUTCDate(projectDate.getUTCDate() - deltaDays);
   const deltaProjectDate = projectDate.toISOString().split('T')[0]; // YYYY-MM-DD.
   const pattern = options.pattern || '';
   const sProjectLanguage = realmConfig.sap_language;

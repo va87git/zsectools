@@ -457,10 +457,10 @@ export default function App() {
       // Format realm_reference_date to YYYY-MM-DD for date input
       let formattedDate = '';
       if (cfg.realm_reference_date) {
-        const date = new Date(cfg.realm_reference_date);
-        if (!isNaN(date.getTime())) {
-          formattedDate = date.toISOString().split('T')[0];
-        }
+        // Backend returns 'YYYY-MM-DD' (or an ISO string): take the date part as-is,
+        // without going through Date objects (avoids timezone shifts).
+        const m = String(cfg.realm_reference_date).match(/^(\d{4}-\d{2}-\d{2})/);
+        if (m) formattedDate = m[1];
       }
 
       setForm({

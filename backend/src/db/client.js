@@ -2,6 +2,12 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+// DATE columns (OID 1082) must be returned as plain 'YYYY-MM-DD' strings.
+// By default node-postgres converts them into a JS Date at *local* midnight; when the
+// Node process runs in a timezone ahead of UTC (e.g. Windows native in Europe) a later
+// toISOString() / JSON.stringify() shifts the value back by one day.
+pg.types.setTypeParser(1082, (value) => value);
+
 // Pool PostgreSQL, health check, setup tabelle and app settings
 const requiredVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
 
