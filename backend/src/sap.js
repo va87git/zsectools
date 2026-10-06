@@ -873,8 +873,11 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
 
 // Function to execute an RFC batch
 
-export async function executeBapiBatch(sapConfig, rfcCommand, rows) {
+// onProgress (optional): called after each row with { current, total, succeeded, failed }
+export async function executeBapiBatch(sapConfig, rfcCommand, rows, onProgress = null) {
   const results = [];
+  let succeeded = 0;
+  let failed = 0;
   for (let i = 0; i < rows.length; i++) {
     try {
       const row = rows[i];
@@ -886,6 +889,7 @@ export async function executeBapiBatch(sapConfig, rfcCommand, rows) {
         message: result.message,
         data: result.data // Return real data from RFC
       });
+      succeeded += 1;
     } catch (err) {
       results.push({
         rowIndex: i + 1,
@@ -893,6 +897,12 @@ export async function executeBapiBatch(sapConfig, rfcCommand, rows) {
         message: err.message,
         data: rows[i]
       });
+      failed += 1;
+    }
+    if (onProgress) {
+      try {
+        onProgress({ current: i + 1, total: rows.length, succeeded, failed });
+      } catch { /* a progress callback failure must never stop the batch */ }
     }
   }
   return results;

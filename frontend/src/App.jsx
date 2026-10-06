@@ -737,19 +737,55 @@ async function executeRfcBatch() {
   setRfcProgress({ current: 0, total: rfcPreviewRows.length, currentRow: '' });
 
   try {
-    const result = await fetchJson('/api/rfc/execute-batch', {
+    // SSE stream (same live-progress approach as the code security source download):
+    // the backend sends one 'progress' event for each executed row.
+    const resp = await fetch(`${API_BASE}/api/rfc/execute-batch-stream`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         realm: selectedRealm.trim(),
         rfcCommand: selectedRfc,
         rows: rfcPreviewRows
       })
     });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+    let streamError = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        const evt = JSON.parse(line.slice(5).trim());
+        if (evt.type === 'progress') {
+          setRfcProgress({ current: evt.current, total: evt.total, currentRow: '' });
+        } else if (evt.type === 'done') {
+          result = evt;
+        } else if (evt.type === 'error') {
+          streamError = evt.error;
+        }
+      }
+    }
+
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error('Execution stream ended without a result');
 
     setRfcResults(result.results || []);
 
-    const successes = result.results.filter(r => r.status === 'success').length;
-    const failures = result.results.filter(r => r.status === 'error').length;
+    const successes = (result.results || []).filter(r => r.status === 'success').length;
+    const failures = (result.results || []).filter(r => r.status === 'error').length;
 
     setRfcMsg(`Execution completed: ${successes} success, ${failures} failed`);
   } catch (err) {

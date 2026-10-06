@@ -1245,6 +1245,8 @@ app.get('/api/rfc/schema/:rfcCommand', (req, res) => {
 });
 
 // POST execution RFC batch
+// NOT USED ANYMORE. Keeping until full test confirm deprecation:
+/*
 app.post('/api/rfc/execute-batch', async (req, res) => {
     try {
     const { realm, rfcCommand, rows } = req.body;
@@ -1268,6 +1270,56 @@ app.post('/api/rfc/execute-batch', async (req, res) => {
     res.json({ results });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+*/
+
+// POST execution RFC batch with live progress (SSE over POST, same approach as
+// /api/code-security/download-source-stream). Events:
+//   { type: 'start', total } -> { type: 'progress', current, total, succeeded, failed } ... -> { type: 'done', results }
+//   or { type: 'error', error }
+app.post('/api/rfc/execute-batch-stream', async (req, res) => {
+  const { realm, rfcCommand, rows } = req.body || {};
+
+  if (!realm || !rfcCommand || !Array.isArray(rows)) {
+    return res.status(400).json({ error: 'Missing parameters' });
+  }
+
+  let sapConfig;
+  try {
+    const realmConfig = await getSapRealm(realm);
+    if (!realmConfig) {
+      return res.status(404).json({ error: `Realm not found: ${realm}` });
+    }
+    sapConfig = mapRealmToSapConnection(realmConfig);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering (nginx)
+  res.flushHeaders();
+
+  // If the browser disconnects the batch keeps running on the server (SAP changes already
+  // started must not be left half-way); events are simply no longer written.
+  const send = (data) => {
+    if (res.writableEnded || res.destroyed) return;
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  send({ type: 'start', total: rows.length });
+
+  try {
+    const results = await executeBapiBatch(sapConfig, rfcCommand, rows, (progress) => {
+      send({ type: 'progress', ...progress });
+    });
+    send({ type: 'done', results });
+  } catch (err) {
+    send({ type: 'error', error: err.message });
+  } finally {
+    res.end();
   }
 });
 
