@@ -446,43 +446,56 @@ export async function pingSapWithConfig(config, start = Date.now()) {
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\u0000-\u001F\u007F]/g;
 
-function parseReadTableRows(readTableResult, delimiter, tableName = '') {
+// Parse the DATA table returned by RFC_READ_TABLE using the OFFSET/LENGTH metadata of each
+// field of the FIELDS table, instead of splitting WA by a delimiter.
+//
+// Why not use DELIMITER (e.g. '|')?
+// RFC_READ_TABLE concatenates each row's fields into WA using the chosen delimiter. If a field
+// value itself contains that character (it happens, e.g. with some AGR_* / T77* tables), the
+// split produces more tokens than fields and every following column shifts: the whole record
+// must be discarded or, worse, gets silently misassigned. The DELIMITER value would also be
+// stripped from real data that legitimately contains it.
+//
+// The FIELDS table always carries OFFSET and LENGTH for every returned field, so we can slice
+// WA with raw.substring(offset, offset + length). This is robust to ANY character in the data
+// (including the would-be delimiter) and never loses a record. This mirrors what the legacy
+// ImportTables.xaml.cs does with conTabella[i].Substring(offset[k], lenght[k]).
+function parseReadTableRows(readTableResult, tableName = '') {
   const fields = readTableResult?.FIELDS || [];
   const dataRows = readTableResult?.DATA || [];
-  const fieldNames = fields.map((f) => f.FIELDNAME);
+
+  // Pre-compute FIELDNAME/OFFSET/LENGTH once per field. OFFSET and LENGTH come back as
+  // strings from node-rfc, so coerce to int and tolerate missing/zero values.
+  const fieldMeta = fields.map((f) => ({
+    name: f.FIELDNAME,
+    type: f.TYPE,
+    length: parseInt(f.LENGTH, 10) || 0,
+    offset: parseInt(f.OFFSET, 10) || 0
+  }));
+
   const rows = [];
   let skipped = 0;
 
   for (let r = 0; r < dataRows.length; r += 1) {
-    // Remove NUL/control chars BEFORE splitting: they would make the PostgreSQL COPY fail
+    // Remove NUL/control chars BEFORE slicing: they would make the PostgreSQL COPY fail.
+    // (Control chars at column boundaries would also break substring offsets.)
     const raw = String(dataRows[r]?.WA || '').replace(CONTROL_CHARS_RE, '');
-    const values = raw.split(delimiter);
-
-    // More values than fields: the delimiter is also present inside a field value, so all the
-    // following columns would be shifted/misassigned. Skip the record and log it.
-    if (values.length > fieldNames.length) {
-      skipped += 1;
-      console.warn(
-        `[import] ${tableName || 'table'}: record ${r + 1} skipped (found ${values.length} values for ` +
-        `${fieldNames.length} fields, delimiter '${delimiter}' present in data): ${raw.slice(0, 200)}`
-      );
-      continue;
-    }
 
     const obj = {};
-    for (let i = 0; i < fieldNames.length; i += 1) {
-      obj[fieldNames[i]] = (values[i] || '').trim();
+    for (let i = 0; i < fieldMeta.length; i += 1) {
+      const { name, offset, length } = fieldMeta[i];
+      // RFC_READ_TABLE without DELIMITER returns each field left-justified and right-padded
+      // with spaces up to its declared LENGTH, placed at its OFFSET in WA. substring() in JS
+      // is safe when (offset + length) > raw.length: it just returns the shorter tail, so we
+      // never need to pad WA manually like the legacy C# code did. Trim trailing spaces to
+      // match the previous DELIMITER-based behaviour (SAP strips them when DELIMITER is set).
+      obj[name] = raw.substring(offset, offset + length).trim();
     }
     rows.push(obj);
   }
 
   return {
-    fields: fields.map(f => ({
-      name: f.FIELDNAME,
-      type: f.TYPE,
-      length: parseInt(f.LENGTH, 10) || 0,
-      offset: parseInt(f.OFFSET, 10) || 0
-    })),
+    fields: fieldMeta,
     rows,
     skipped,
     receivedCount: dataRows.length
@@ -500,14 +513,17 @@ export async function readSapTable(config, tableName, fieldsToSelect = [], rowsk
     throw new Error(`Missing SAP configuration values: ${missing.join(', ')}`);
   }
 
-  const delimiter = '|';
+  // NOTE: do NOT set DELIMITER on rfcOptions. Without it, RFC_READ_TABLE pads each field in
+  // WA with spaces up to its declared LENGTH and the FIELDS table carries OFFSET/LENGTH, which
+  // parseReadTableRows() uses to slice WA. This avoids the delimiter-collision problem (a
+  // field value containing the delimiter char would split into too many tokens and break
+  // every following column).
   const client = new nodeRfc.Client(config);
   try {
     await client.open();
 
     const rfcOptions = {
       QUERY_TABLE: tableName,
-      DELIMITER: delimiter,
       ROWSKIPS: rowskips,
       ROWCOUNT: rowcount,
       OPTIONS: options.map(opt => ({ TEXT: opt }))
@@ -518,7 +534,7 @@ export async function readSapTable(config, tableName, fieldsToSelect = [], rowsk
     }
 
     const result = await client.call('RFC_READ_TABLE', rfcOptions);
-    const parsed = parseReadTableRows(result, delimiter, tableName);
+    const parsed = parseReadTableRows(result, tableName);
 
     return {
       fields: parsed.fields,
