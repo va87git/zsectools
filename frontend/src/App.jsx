@@ -207,6 +207,10 @@ export default function App() {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState('');
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState('');
+  const [updateRestarting, setUpdateRestarting] = useState(false);
+  const updatePollRef = useRef(null);
 
   // Mapper section state
   const [mapElementPattern, setMapElementPattern] = useState('');
@@ -427,6 +431,62 @@ export default function App() {
       setUpdateLoading(false);
     }
   };
+
+  // Poll the backend version until it matches the target release (update done)
+  const startVersionPolling = (targetVersion) => {
+    if (updatePollRef.current) clearInterval(updatePollRef.current);
+    let elapsed = 0;
+    updatePollRef.current = setInterval(async () => {
+      elapsed += 5;
+      try {
+        const data = await fetchJson('/api/settings/app-version');
+        if (data?.ok && targetVersion && data.version === targetVersion) {
+          clearInterval(updatePollRef.current);
+          updatePollRef.current = null;
+          setUpdateRestarting(false);
+          setUpdateSuccess(`Update to v${targetVersion} installed! Hard-refresh this page (Ctrl+F5) to load the new interface.`);
+        }
+      } catch {
+        /* backend restarting: keep polling */
+      }
+      if (elapsed >= 480) {
+        clearInterval(updatePollRef.current);
+        updatePollRef.current = null;
+        setUpdateRestarting(false);
+        setUpdateSuccess((prev) => prev + ' (The backend did not come back within 8 minutes: check its console and temp_update/update.log, then restart it manually.)');
+      }
+    }, 5000);
+  };
+
+  const handleApplyUpdate = async () => {
+    if (!updateInfo?.downloadUrl) return;
+    setApplyLoading(true);
+    setUpdateError('');
+    setUpdateSuccess('');
+    try {
+      const data = await fetchJson('/api/settings/apply-update', {
+        method: 'POST',
+        body: JSON.stringify({ downloadUrl: updateInfo.downloadUrl })
+      });
+      if (data && data.ok) {
+        setUpdateSuccess(data.message || 'Update staged.');
+        setUpdateRestarting(true);
+        startVersionPolling(updateInfo.latestVersion);
+      } else {
+        setUpdateError(data?.error || 'Failed to start the update.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUpdateError(err.message || 'Failed to start the update.');
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+
+  // Stop the polling timer when the app unmounts
+  useEffect(() => () => {
+    if (updatePollRef.current) clearInterval(updatePollRef.current);
+  }, []);
 
   async function loadRealmList() {
     setSapRealmError('');
@@ -2398,7 +2458,8 @@ async function executeRfcBatch() {
     sapHealth, sdkDiag, sdkDiagError, sdkPath,
     sdkPathError, sdkPathInfo, selectedRealm, setAppHealth,
     setDbHealth, setSettingsTab, settingsTab, updateError,
-    updateInfo, updateLoading
+    updateInfo, updateLoading, applyLoading, updateSuccess,
+    updateRestarting, handleApplyUpdate
   };
 
   const realmCtx = {

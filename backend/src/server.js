@@ -94,6 +94,16 @@ import {
   codeSecurityResultsTableExists,
   clearCodeSecurityResults
 } from './codeSecurity.js';
+import {
+  applyStagedUpdate,
+  cleanupStagedArtifacts,
+  detectEnvironment,
+  getBackendVersion,
+  isInsecureTlsAllowed,
+  isAllowedDownloadUrl,
+  resolveLatestRelease,
+  stageUpdate
+} from './updater.js';
 
 // Compute the frontend path based on the execution folder (App)
 import { fileURLToPath } from 'url'; // Keep this if needed for development, otherwise it can stay
@@ -159,49 +169,24 @@ app.use(express.static(frontendPath));
 //app.use('/api/health', (req, res) => { /* ... */ });
 // ... all other app.get('/api/...') routes ...
 
-// Route to check for GitHub updates
+// ── Software updates (GitHub releases) ────────────────────────────────────
+// TLS inspection proxies (e.g. Zscaler) can break the outbound HTTPS calls:
+// set ALLOW_INSECURE_TLS=true in the .env file to accept self-signed
+// certificates for these calls only.
+
+// In-memory lock: only one update can be staged/applied at a time
+let applyUpdateRunning = false;
+
 app.get('/api/settings/check-update', async (_req, res) => {
   try {
-    // Read package.json version dynamically from filesystem
-    const pkgRaw = await fs.readFile(new URL('../package.json', import.meta.url), 'utf-8');
-    const pkg = JSON.parse(pkgRaw);
-    const currentVersion = pkg.version;
-
-    // GitHub API endpoint for latest release
-    const githubUrl = 'https://api.github.com/repos/va87git/zsectools/releases/latest';
-
-    const response = await fetch(githubUrl, {
-      headers: {
-        'User-Agent': 'ZSecTools-Update-Check' // GitHub API requires User-Agent
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return res.json({
-          ok: true,
-          hasUpdate: false,
-          currentVersion,
-          latestVersion: currentVersion,
-          message: 'No published releases found on GitHub.'
-        });
-      }
-      throw new Error(`GitHub API error: status ${response.status}`);
-    }
-
-    const release = await response.json();
-    // Strip leading 'v' if present in tag name (e.g. "v1.1.0" -> "1.1.0")
-    const latestVersion = release.tag_name ? release.tag_name.replace(/^v/, '') : currentVersion;
-
-    const hasUpdate = latestVersion !== currentVersion;
-
+    const release = await resolveLatestRelease();
+    const env = detectEnvironment();
     res.json({
       ok: true,
-      currentVersion,
-      latestVersion,
-      hasUpdate,
-      releaseUrl: release.html_url,
-      releaseNotes: release.body
+      ...release,
+      platform: env.platform,
+      updateSupported: env.canApply,
+      insecureTls: isInsecureTlsAllowed()
     });
   } catch (error) {
     console.error('[Update Check Error]:', error);
@@ -209,6 +194,79 @@ app.get('/api/settings/check-update', async (_req, res) => {
       ok: false,
       error: error?.message || 'Failed to check for updates'
     });
+  }
+});
+
+app.post('/api/settings/apply-update', async (req, res) => {
+  if (applyUpdateRunning) {
+    return res.status(409).json({ ok: false, error: 'An update is already in progress.' });
+  }
+  applyUpdateRunning = true;
+  try {
+    const downloadUrl = req.body?.downloadUrl;
+    if (!downloadUrl) {
+      return res.status(400).json({ ok: false, error: 'Download URL is required (run Check for updates first).' });
+    }
+    if (!isAllowedDownloadUrl(downloadUrl)) {
+      return res.status(400).json({ ok: false, error: 'Download URL is not an allowed GitHub release URL.' });
+    }
+
+    const env = detectEnvironment();
+    if (!env.canApply) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Docker update not available: add "- .:/host/project" to the backend volumes in docker-compose.yml.'
+      });
+    }
+
+    // Download + extract the release into temp_update/
+    const stage = await stageUpdate(downloadUrl);
+
+    const messages = {
+      windows: 'Update staged. The updater will replace the files, rebuild the frontend and restart the backend (service ZSecTools_Backend or standalone node). The app will be unavailable for a few minutes: wait, then refresh this page.',
+      linux: 'Update staged. Files are being replaced and the frontend rebuilt: the backend restarts automatically (systemd) or re-run ./run.sh if you started it manually. Refresh this page in a few minutes.',
+      docker: 'Update staged. Files are being replaced in the project folder: the backend container restarts automatically and the frontend dev server hot-reloads. Refresh this page in a few minutes.'
+    };
+
+    // Respond first, then perform the platform-specific apply.
+    res.json({ ok: true, message: messages[env.platform] || messages.linux, platform: env.platform });
+
+    if (env.platform === 'windows') {
+      // The .cmd script waits for this process to exit, then does the work.
+      await applyStagedUpdate(stage);
+      setTimeout(() => process.exit(0), 1500);
+    } else {
+      // In-place apply while the old process is still serving, then exit:
+      // systemd (Restart=always) / docker restart policy brings the new one up.
+      setTimeout(async () => {
+        try {
+          await applyStagedUpdate(stage);
+        } catch (err) {
+          console.error('[Apply Update Error]:', err);
+          await fs.appendFile(stage.logFile, `[${new Date().toISOString()}] APPLY ERROR: ${err?.stack || err}\n`).catch(() => {});
+        } finally {
+          setTimeout(() => process.exit(0), 800);
+        }
+      }, 1000);
+    }
+  } catch (error) {
+    applyUpdateRunning = false;
+    console.error('[Apply Update Error]:', error);
+    if (res.headersSent) return;
+    res.status(500).json({
+      ok: false,
+      error: error?.message || 'Failed to stage the update'
+    });
+  }
+});
+
+app.get('/api/settings/app-version', async (_req, res) => {
+  try {
+    const version = await getBackendVersion();
+    const env = detectEnvironment();
+    res.json({ ok: true, version, platform: env.platform });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message || 'Failed to read version' });
   }
 });
 
@@ -1971,7 +2029,11 @@ app.use((req, res, next) => {
 
 Promise.all([ensureSapRealmTable(), ensureSapImportTables(), ensureAppSettingsTable()])
   //.then(applySapSdkPathFromSettings)
+  .then(() => cleanupStagedArtifacts())
   .then(() => {
+    if (isInsecureTlsAllowed()) {
+      console.warn('[backend] ALLOW_INSECURE_TLS=true: update checks/downloads will accept untrusted TLS certificates (Zscaler mode).');
+    }
     app.listen(port, () => {
       console.log(`[backend] listening on http://localhost:${port}`);
     });

@@ -234,18 +234,28 @@ export default function SettingsSection({ ctx }) {
         {/* Panel 3: updates check */}
         <div style={panelStyle}>
           <h3>Software Updates</h3>
-          <p style={{ marginTop: 0 }}>Check if a newer release of ZSecTools is available on GitHub.</p>
+          <p style={{ marginTop: 0 }}>Check if a newer release of ZSecTools is available on GitHub, then download and install it with one click.</p>
 
           <button
             style={{ padding: '8px 12px', cursor: updateLoading ? 'not-allowed' : 'pointer' }}
             onClick={checkForUpdates}
-            disabled={updateLoading}
+            disabled={updateLoading || applyLoading}
           >
             {updateLoading ? 'Checking...' : 'Check for updates'}
           </button>
 
           {updateError ? (
             <p style={{ color: 'var(--danger)', marginTop: 10 }}>{updateError}</p>
+          ) : null}
+
+          {updateSuccess ? (
+            <p style={{ color: 'var(--success)', marginTop: 10, whiteSpace: 'pre-wrap' }}>{updateSuccess}</p>
+          ) : null}
+
+          {updateRestarting ? (
+            <p style={{ color: 'var(--text-muted)', marginTop: 6 }}>
+              Waiting for the backend to restart with the new version... (this page keeps checking automatically)
+            </p>
           ) : null}
 
           {updateInfo ? (
@@ -260,6 +270,29 @@ export default function SettingsSection({ ctx }) {
                       View release on GitHub
                     </a>
                   </p>
+                  {updateInfo.releaseNotes ? (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 13 }}>Release notes</summary>
+                      <pre style={{ marginTop: 6, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                        {updateInfo.releaseNotes}
+                      </pre>
+                    </details>
+                  ) : null}
+                  {updateInfo.updateSupported === false ? (
+                    <p style={{ marginTop: 10, color: 'var(--danger)', fontSize: 13 }}>
+                      One-click update is not available on this deployment: add
+                      <code> "- .:/host/project" </code> to the backend volumes in docker-compose.yml
+                      and recreate the containers.
+                    </p>
+                  ) : (
+                    <button
+                      style={{ marginTop: 10, padding: '8px 12px', cursor: applyLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                      onClick={handleApplyUpdate}
+                      disabled={applyLoading}
+                    >
+                      {applyLoading ? 'Downloading && staging...' : 'Update now'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p style={{ color: 'var(--success)', margin: 0 }}>
@@ -268,6 +301,12 @@ export default function SettingsSection({ ctx }) {
               )}
             </div>
           ) : null}
+
+          <p style={{ marginTop: 14, marginBottom: 0, fontSize: 12, color: 'var(--text-faint)' }}>
+            Behind Zscaler or another TLS-inspecting proxy? Set
+            <code> ALLOW_INSECURE_TLS=true </code> in the <code>.env</code> file and restart the
+            backend to accept self-signed certificates for update checks and downloads.
+          </p>
         </div>
       </div>
     );
@@ -275,11 +314,12 @@ export default function SettingsSection({ ctx }) {
 
   const {
   appHealth, checkForUpdates, dbHealth, errors,
-  loadSdkPath, runCheck, runSapCheck, runSdkDiagnostics,
+  handleApplyUpdate, loadSdkPath, runCheck, runSapCheck, runSdkDiagnostics,
   sapHealth, sdkDiag, sdkDiagError, sdkPath,
   sdkPathError, sdkPathInfo, selectedRealm, setAppHealth,
   setDbHealth, setSettingsTab, settingsTab, updateError,
-  updateInfo, updateLoading
+  updateInfo, updateLoading, applyLoading, updateSuccess,
+  updateRestarting
   } = ctx;
 
     const tabBtn = (active) => ({

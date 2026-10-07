@@ -340,6 +340,31 @@ This section lets you verify that the application's prerequisites are correctly 
 
 Before running an SAP connectivity check (`RFCPING`), select an active realm in the [SAP Realms](#sap-realms) section. The ping check verifies that the machine running the backend can actually reach the selected SAP system over the network and that the provided credentials are valid.
 
+### About
+
+Shows the current application version and license information.
+
+### Software Updates
+
+From the **Settings → About** tab you can check whether a newer release of ZSecTools is available on GitHub and install it with one click:
+
+1. Click **Check for updates**: the backend queries the latest GitHub release and compares it with the running version.
+2. If a new version is available, click **Update now**: the release zip is downloaded and staged in the `temp_update` folder inside the application directory.
+3. The update is then applied automatically, depending on the platform:
+
+| Platform | What happens after "Update now" |
+|----------|--------------------------------|
+| **Windows (WinSW services)** | A generated `temp_update\apply-update.cmd` waits for the backend to stop, copies the new files, runs `npm install`, rebuilds the frontend and restarts the `ZSecTools_Backend` service. |
+| **Windows (run.bat)** | Same as above, but the backend is restarted in a new node window (the services are not touched). |
+| **Linux (systemd)** | Files are replaced in-place and the frontend is rebuilt while the old process is still running; the backend then exits and systemd (`Restart=always`) brings the new version up. With `run.sh`, start it again manually. |
+| **Docker** | Requires the bind mount `- .:/host/project` on the backend service (already included in docker-compose.yml). Files are replaced on the host, `npm install` runs inside the container, which restarts automatically (`restart: unless-stopped`). The frontend container runs the vite dev server and hot-reloads the new sources. |
+
+The page keeps polling the backend version: when the new version is live you are prompted to hard-refresh the browser (`Ctrl+F5`). Details and errors are logged to `temp_update\update.log`.
+
+The update never touches local data and configuration: `.env`, `pwfile.txt`, `SAP-TABLE-LIST.txt`, the `CodeSecurity` folder, `node_modules`, the portable `node-bin` and `postgres` folders are preserved as-is.
+
+**Corporate proxy / Zscaler:** if the update check fails with a certificate error (TLS inspection), set `ALLOW_INSECURE_TLS=true` in the `.env` file and restart the backend. This makes the updater accept self-signed corporate certificates for GitHub requests only — it does not affect any other connection.
+
 ---
 
 ## Technical Connection Information

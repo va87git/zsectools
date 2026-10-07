@@ -44,6 +44,9 @@ services:
       SAP_SYSNR: ${SAP_SYSNR:-}
       SAP_CLIENT: ${SAP_CLIENT:-}
       SAP_LANG: ${SAP_LANG:-EN}
+      # Set ALLOW_INSECURE_TLS=true in .env to accept self-signed certificates
+      # (e.g. Zscaler TLS inspection) for GitHub update checks/downloads.
+      ALLOW_INSECURE_TLS: ${ALLOW_INSECURE_TLS:-false}
       SAP_TABLE_LIST_PATH: /etc/sap/SAP-TABLE-LIST.txt
       CODE_SECURITY_ROOT: /etc/sap/CodeSecurity
       # Optional: force the uid/gid used by the server process inside the container.
@@ -54,6 +57,9 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      # Full project root (rw): lets the backend self-update replace the
+      # backend/frontend source and root scripts on the host, then restart.
+      - .:/host/project
       # Optional: mount host SDK folder into container.
       # By default this points to a local placeholder so compose works even when /opt is not mountable.
       # Set SAPNWRFC_HOST_PATH and SAPNWRFC_CONTAINER_PATH to real paths when needed.
