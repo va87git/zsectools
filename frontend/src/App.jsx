@@ -209,8 +209,6 @@ export default function App() {
   const [updateError, setUpdateError] = useState('');
   const [applyLoading, setApplyLoading] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState('');
-  const [updateRestarting, setUpdateRestarting] = useState(false);
-  const updatePollRef = useRef(null);
 
   // Mapper section state
   const [mapElementPattern, setMapElementPattern] = useState('');
@@ -432,32 +430,6 @@ export default function App() {
     }
   };
 
-  // Poll the backend version until it matches the target release (update done)
-  const startVersionPolling = (targetVersion) => {
-    if (updatePollRef.current) clearInterval(updatePollRef.current);
-    let elapsed = 0;
-    updatePollRef.current = setInterval(async () => {
-      elapsed += 5;
-      try {
-        const data = await fetchJson('/api/settings/app-version');
-        if (data?.ok && targetVersion && data.version === targetVersion) {
-          clearInterval(updatePollRef.current);
-          updatePollRef.current = null;
-          setUpdateRestarting(false);
-          setUpdateSuccess(`Update to v${targetVersion} installed! Hard-refresh this page (Ctrl+F5) to load the new interface.`);
-        }
-      } catch {
-        /* backend restarting: keep polling */
-      }
-      if (elapsed >= 480) {
-        clearInterval(updatePollRef.current);
-        updatePollRef.current = null;
-        setUpdateRestarting(false);
-        setUpdateSuccess((prev) => prev + ' (The backend did not come back within 8 minutes: check its console and temp_update/update.log, then restart it manually.)');
-      }
-    }, 5000);
-  };
-
   const handleApplyUpdate = async () => {
     if (!updateInfo?.downloadUrl) return;
     setApplyLoading(true);
@@ -469,9 +441,9 @@ export default function App() {
         body: JSON.stringify({ downloadUrl: updateInfo.downloadUrl })
       });
       if (data && data.ok) {
-        setUpdateSuccess(data.message || 'Update staged.');
-        setUpdateRestarting(true);
-        startVersionPolling(updateInfo.latestVersion);
+        // The message from the backend already contains the platform-specific
+        // instructions (restart services / F5 / restart the container).
+        setUpdateSuccess(data.message || 'Update applied.');
       } else {
         setUpdateError(data?.error || 'Failed to start the update.');
       }
@@ -482,11 +454,6 @@ export default function App() {
       setApplyLoading(false);
     }
   };
-
-  // Stop the polling timer when the app unmounts
-  useEffect(() => () => {
-    if (updatePollRef.current) clearInterval(updatePollRef.current);
-  }, []);
 
   async function loadRealmList() {
     setSapRealmError('');
@@ -2459,7 +2426,7 @@ async function executeRfcBatch() {
     sdkPathError, sdkPathInfo, selectedRealm, setAppHealth,
     setDbHealth, setSettingsTab, settingsTab, updateError,
     updateInfo, updateLoading, applyLoading, updateSuccess,
-    updateRestarting, handleApplyUpdate
+    handleApplyUpdate
   };
 
   const realmCtx = {

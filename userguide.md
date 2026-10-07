@@ -349,17 +349,17 @@ Shows the current application version and license information.
 From the **Settings → About** tab you can check whether a newer release of ZSecTools is available on GitHub and install it with one click:
 
 1. Click **Check for updates**: the backend queries the latest GitHub release and compares it with the running version.
-2. If a new version is available, click **Update now**: the release zip is downloaded and staged in the `temp_update` folder inside the application directory.
-3. The update is then applied automatically, depending on the platform:
+2. If a new version is available, click Update now: the release zip is downloaded and the new files are copied over the application directory (local data is never touched).
+3. When the download completes, the page shows a message with the steps to finish the update:
 
-| Platform | What happens after "Update now" |
+| Platform | What to do when the message appears |
 |----------|--------------------------------|
-| **Windows (WinSW services)** | A generated `temp_update\apply-update.cmd` waits for the backend to stop, copies the new files, runs `npm install`, rebuilds the frontend and restarts the `ZSecTools_Backend` service. |
-| **Windows (run.bat)** | Same as above, but the backend is restarted in a new node window (the services are not touched). |
-| **Linux (systemd)** | Files are replaced in-place and the frontend is rebuilt while the old process is still running; the backend then exits and systemd (`Restart=always`) brings the new version up. With `run.sh`, start it again manually. |
-| **Docker** | Requires the bind mount `- .:/host/project` on the backend service (already included in docker-compose.yml). Files are replaced on the host, `npm install` runs inside the container, which restarts automatically (`restart: unless-stopped`). The frontend container runs the vite dev server and hot-reloads the new sources. |
+| **Windows (services installed)** | setup.bat starts automatically in a new window and recompiles everything. When it shows "Setup completed successfully!", restart the ZSecTools services and refresh this page (F5). |
+| **Windows (run.bat)** | Same automatic recompilation; when setup.bat has finished, simply refresh the page (F5). |
+| **Linux native** | Dependencies are refreshed and the frontend rebuilt in the background; when done, restart the application (`./run.sh` or the systemd service) and refresh the page (F5). |
+| **Docker** | Requires the bind mount - .:/host/project on the backend service (already included in docker-compose.yml). Files are replaced on the host and npm dependencies are refreshed inside the container: restart the container(s) and refresh the page (F5). |
 
-The page keeps polling the backend version: when the new version is live you are prompted to hard-refresh the browser (`Ctrl+F5`). Details and errors are logged to `temp_update\update.log`.
+The backend keeps running while the update is applied: nothing is closed or killed, and any console you have open stays as it is. Details and errors are logged to `temp_update\update.log`.
 
 The update never touches local data and configuration: `.env`, `pwfile.txt`, `SAP-TABLE-LIST.txt`, the `CodeSecurity` folder, `node_modules`, the portable `node-bin` and `postgres` folders are preserved as-is.
 

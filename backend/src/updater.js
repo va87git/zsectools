@@ -1,28 +1,34 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // updater.js — self-update support for ZSecTools
 //
-// Features:
-//   1. GitHub release check with optional TLS inspection bypass (Zscaler):
-//        ALLOW_INSECURE_TLS=true  ->  self-signed corporate certificates are
-//        accepted for the outbound HTTPS calls made by this module ONLY
-//        (GitHub API + release download). Set it in the .env file.
-//   2. Native (dependency-free) download + zip extraction.
-//   3. Platform-aware apply:
-//        - Windows : a generated apply-update.cmd waits for the backend to
-//                    stop, copies the new files (preserving .env, node-bin,
-//                    postgres, CodeSecurity, node_modules, ...), rebuilds the
-//                    frontend and restarts the WinSW service
-//                    (ZSecTools_Backend) or a standalone node window.
-//        - Linux   : in-place copy + npm install + frontend rebuild while the
-//                    old process is still running, then exit(0); systemd
-//                    (Restart=always) or run.sh brings the new version up.
-//        - Docker  : the project root is expected on /host/project (bind
-//                    mount "- .:/host/project" in docker-compose.yml). Files
-//                    are replaced on the host, npm install runs inside /app
-//                    (so dependencies land in the persistent node_modules
-//                    volume) and the container restarts automatically
-//                    (restart: unless-stopped). The frontend container runs
-//                    the vite dev server and hot-reloads the new sources.
+// Update flow (deliberately simple — 3 steps, 1 optional extra):
+//   1. DOWNLOAD  : the release zip is fetched (GitHub asset, with automatic
+//                  mirror fallback: codeload -> github archive -> api zipball)
+//                  and extracted into temp_update/staged. Behind TLS-inspecting
+//                  proxies (Zscaler): set ALLOW_INSECURE_TLS=true in .env;
+//                  optional GITHUB_TOKEN raises the GitHub API rate limit.
+//   2. OVERWRITE : the new files are copied over the project folder. Runtime
+//                  data is NEVER touched (.env, pwfile.txt, SAP-TABLE-LIST.txt,
+//                  postgres, node-bin, node_modules, CodeSecurity, temp_update,
+//                  logs, ...). On Windows robocopy /R:1 /W:1 is used, so a
+//                  locked file (e.g. run.bat being executed) can never stall
+//                  the update: the file is skipped after 1 retry and reported
+//                  in temp_update/update.log.
+//   3. MESSAGE   : the UI shows the completion message with the restart
+//                  instructions for the current platform. Nothing is killed,
+//                  no console is closed, the backend keeps running.
+//   4. WINDOWS ONLY: setup.bat is launched automatically in ONE new console
+//                  window to recompile everything (npm install backend +
+//                  frontend, vite build). The window ends with
+//                  "Setup completed successfully!" and stays open.
+//                  Docker/Linux just refresh the npm dependencies in the
+//                  background; the user restarts the container / the app as
+//                  instructed by the message.
+//   5. CLEANUP   : when the flow is over (setup window closed on Windows /
+//                  dependency refresh done on Docker/Linux) the whole
+//                  temp_update folder is deleted. The same cleanup also runs
+//                  at every backend start, as a safety net for updates that
+//                  never completed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import https from 'https';
@@ -32,6 +38,16 @@ import path from 'path';
 import { execFile, spawn } from 'child_process';
 
 const GITHUB_API_LATEST = 'https://api.github.com/repos/va87git/zsectools/releases/latest';
+
+// Owner/repo derived from the API URL above (used to build the mirror URLs)
+const GITHUB_REPO = (() => {
+  try {
+    const m = new URL(GITHUB_API_LATEST).pathname.match(/^\/repos\/([^/]+)\/([^/]+)\//);
+    return m ? { owner: m[1], repo: m[2] } : { owner: 'va87git', repo: 'zsectools' };
+  } catch {
+    return { owner: 'va87git', repo: 'zsectools' };
+  }
+})();
 
 // Hosts the apply-update endpoint is allowed to download from
 const ALLOWED_DOWNLOAD_HOSTS = new Set([
@@ -84,8 +100,33 @@ function makeHttpsAgent() {
   };
 }
 
-// Single https request, following up to 6 redirects (GitHub asset URLs redirect)
-function httpsGet(url, headers = {}, redirectsLeft = 6) {
+// Optional GITHUB_TOKEN (.env): sent ONLY to api.github.com, never to other
+// hosts (it is stripped automatically when a redirect leaves api.github.com).
+function authHeadersFor(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (process.env.GITHUB_TOKEN && u.hostname === 'api.github.com') {
+      return { Authorization: `Bearer ${String(process.env.GITHUB_TOKEN).trim()}` };
+    }
+  } catch { /* ignore malformed urls */ }
+  return {};
+}
+
+// Reads (and drains) at most maxBytes of a response body: used to surface the
+// first bytes of proxy block pages / GitHub error JSON inside the exception.
+async function consumeBodyPeek(res, maxBytes = 600) {
+  const chunks = [];
+  let total = 0;
+  await new Promise((resolve) => {
+    res.on('data', (c) => { total += c.length; if (total <= maxBytes) chunks.push(c); });
+    res.on('end', resolve);
+    res.on('error', resolve);
+  });
+  return Buffer.concat(chunks).toString('utf8').replace(/\s+/g, ' ').trim().slice(0, maxBytes);
+}
+
+// Single https request, following up to 8 redirects (GitHub asset URLs redirect)
+function httpsGet(url, headers = {}, redirectsLeft = 8) {
   return new Promise((resolve, reject) => {
     const { agent } = makeHttpsAgent();
     const req = https.get(url, { agent, headers }, (res) => {
@@ -93,7 +134,16 @@ function httpsGet(url, headers = {}, redirectsLeft = 6) {
       if (status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {
         res.resume(); // drain
         const next = new URL(res.headers.location, url).toString();
-        return resolve(httpsGet(next, headers, redirectsLeft - 1));
+        let nextHeaders = headers;
+        try {
+          // Never forward credentials to a different host
+          // (e.g. api.github.com -> codeload.github.com)
+          if (new URL(next).host !== new URL(url).host) {
+            nextHeaders = { ...headers };
+            delete nextHeaders.Authorization;
+          }
+        } catch { /* keep original headers */ }
+        return resolve(httpsGet(next, nextHeaders, redirectsLeft - 1));
       }
       resolve(res);
     });
@@ -105,12 +155,13 @@ function httpsGet(url, headers = {}, redirectsLeft = 6) {
 export async function fetchGithubJson(url) {
   const res = await httpsGet(url, {
     'User-Agent': 'ZSecTools-Update-Check',
-    'Accept': 'application/vnd.github.v3+json'
+    'Accept': 'application/vnd.github.v3+json',
+    ...authHeadersFor(url)
   });
   if (res.statusCode === 404) return { notFound: true };
   if (res.statusCode !== 200) {
-    res.resume();
-    throw new Error(`GitHub API HTTP error: ${res.statusCode}`);
+    const peek = await consumeBodyPeek(res, 300);
+    throw new Error(`GitHub API HTTP error: ${res.statusCode} body: "${peek}"`);
   }
   let data = '';
   for await (const chunk of res) data += chunk;
@@ -118,11 +169,31 @@ export async function fetchGithubJson(url) {
 }
 
 async function downloadToFile(url, destPath) {
-  const res = await httpsGet(url, { 'User-Agent': 'ZSecTools-Update-Download' });
+  const res = await httpsGet(url, {
+    'User-Agent': 'ZSecTools-Update-Download',
+    'Accept': '*/*',
+    ...authHeadersFor(url)
+  });
+
   if (res.statusCode !== 200) {
-    res.resume();
-    throw new Error(`Download failed with HTTP status ${res.statusCode}`);
+    // Capture WHO refused the download: a Zscaler block page (text/html) and a
+    // GitHub rate-limit JSON look completely different and need different fixes.
+    const peek = await consumeBodyPeek(res);
+    const ctype = String(res.headers['content-type'] || 'unknown');
+    let hint = '';
+    if (ctype.includes('text/html') && /zscaler|blocked|block\s?page|cloud\s?security|access\s?denied|url\s?categor/i.test(peek)) {
+      hint = ' This looks like a corporate proxy BLOCK PAGE (Zscaler): the download host must be whitelisted by IT. ALLOW_INSECURE_TLS cannot bypass a policy block (TLS was not the problem here).';
+    } else if (/rate limit/i.test(peek)) {
+      hint = ' GitHub API rate limit exceeded for the shared corporate IP: set GITHUB_TOKEN in the .env file or retry later.';
+    }
+    const err = new Error(
+      `Download failed with HTTP status ${res.statusCode} from ${url} ` +
+      `[content-type: ${ctype}] body: "${peek}"${hint}`
+    );
+    err.status = res.statusCode;
+    throw err;
   }
+
   const file = fss.createWriteStream(destPath);
   await new Promise((resolve, reject) => {
     res.pipe(file);
@@ -240,6 +311,45 @@ export function isAllowedDownloadUrl(urlString) {
   }
 }
 
+// Builds the ordered list of download mirrors for a release. The first URL is
+// the one chosen by the update check; the others are alternates that bypass
+// api.github.com / github.com release assets, because a corporate proxy often
+// blocks only some of these hosts.
+function buildDownloadCandidates(primaryUrl) {
+  const candidates = [];
+  const push = (u) => {
+    if (u && !candidates.includes(u) && isAllowedDownloadUrl(u)) candidates.push(u);
+  };
+
+  push(primaryUrl);
+
+  try {
+    const u = new URL(primaryUrl);
+    // https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
+    const asset = u.pathname.match(/^\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(?:.*)$/);
+    // https://api.github.com/repos/<owner>/<repo>/zipball/<tag>
+    const zipball = u.pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/zipball\/(.+)$/);
+    // https://github.com/<owner>/<repo>/archive/refs/tags/<tag>.zip
+    const archive = u.pathname.match(/^\/([^/]+)\/([^/]+)\/archive\/refs\/tags\/(.+?)(\.zip)?$/);
+
+    const owner = (asset && asset[1]) || (zipball && zipball[1]) || (archive && archive[1]) || GITHUB_REPO.owner;
+    const repo = (asset && asset[2]) || (zipball && zipball[2]) || (archive && archive[2]) || GITHUB_REPO.repo;
+    const tag = (asset && asset[3]) || (zipball && zipball[3]) || (archive && archive[3]);
+
+    if (tag) {
+      const t = encodeURIComponent(decodeURIComponent(tag));
+      // codeload serves the tag zip directly: no API, no rate limit, and it is
+      // a different hostname from github.com (so a Zscaler category block on
+      // one host does not necessarily apply to the other).
+      push(`https://codeload.github.com/${owner}/${repo}/zip/refs/tags/${t}`);
+      push(`https://github.com/${owner}/${repo}/archive/refs/tags/${t}.zip`);
+      push(`https://api.github.com/repos/${owner}/${repo}/zipball/${t}`);
+    }
+  } catch { /* primary URL only */ }
+
+  return candidates;
+}
+
 export async function stageUpdate(downloadUrl) {
   const env = detectEnvironment();
   if (!env.canApply) {
@@ -262,8 +372,32 @@ export async function stageUpdate(downloadUrl) {
   await fs.rm(zipPath, { force: true });
   await fs.mkdir(stagedRoot, { recursive: true });
 
+  // Try every mirror until one succeeds: each attempt (including the failure
+  // reason) is recorded in update.log for diagnostics.
+  const candidates = buildDownloadCandidates(downloadUrl);
+  await appendLog(logFile, `download mirrors: ${candidates.join(' | ')}`);
+
   await appendLog(logFile, 'downloading release zip...');
-  await downloadToFile(downloadUrl, zipPath);
+  let lastError = null;
+  let usedUrl = null;
+  for (const candidate of candidates) {
+    try {
+      await downloadToFile(candidate, zipPath);
+      usedUrl = candidate;
+      break;
+    } catch (err) {
+      lastError = err;
+      await appendLog(logFile, `mirror failed [${candidate}]: ${err.message}`);
+    }
+  }
+
+  if (!usedUrl) {
+    throw new Error(
+      `All download mirrors failed (${candidates.length} tried). ` +
+      `Last error: ${lastError ? lastError.message : 'unknown'}`
+    );
+  }
+  await appendLog(logFile, `release zip downloaded from ${usedUrl}`);
 
   await appendLog(logFile, 'extracting release zip...');
   const extractor = await extractZipNative(zipPath, stagedRoot);
@@ -279,7 +413,8 @@ export async function stageUpdate(downloadUrl) {
 
   // Persist staging metadata (used for diagnostics)
   const info = {
-    downloadUrl,
+    downloadUrl: usedUrl,
+    requestedUrl: downloadUrl,
     stagedDir,
     rootDir: env.projectRoot,
     platform: env.platform,
@@ -325,7 +460,7 @@ function runLogged(cmd, args, cwd, logFile, timeoutMs = 10 * 60 * 1000) {
   });
 }
 
-// ── Apply: shared filesystem steps ───────────────────────────────────────────
+// ── Step 2: overwrite the project files ──────────────────────────────────────
 
 function copyFilter(src) {
   const base = path.basename(src);
@@ -351,6 +486,85 @@ async function copyTree(srcDir, destDir, logFile) {
     if (fss.existsSync(be)) await fs.chmod(be, 0o755).catch(() => {});
   }
   await appendLog(logFile, 'copy done');
+}
+
+// Windows: one hidden robocopy run. /E copies the whole tree (no deletion of
+// extra files), /R:1 /W:1 means a locked file (e.g. run.bat held open by its
+// console) is retried once and then SKIPPED with a log entry — the update can
+// never hang, no window is killed, nothing else is opened. Exit codes 0-7 are
+// success for robocopy (1 = "files copied", which is the normal case).
+async function overwriteFilesOnWindows(stage) {
+  await appendLog(stage.logFile, `overwriting files (robocopy): ${stage.stagedDir} -> ${stage.projectRoot}`);
+  const args = [
+    stage.stagedDir, stage.projectRoot,
+    '/E', '/R:1', '/W:1', '/NP',
+    '/XD', ...EXCLUDED_DIRS,
+    '/XF', ...EXCLUDED_FILES
+  ];
+  const res = await runLogged('robocopy', args, stage.projectRoot, stage.logFile);
+  await appendLog(stage.logFile, `robocopy exit code: ${res.code}`);
+  if (res.code >= 8) {
+    throw new Error(`File copy failed (robocopy exit code ${res.code}). Details in temp_update/update.log`);
+  }
+}
+
+export async function applyStagedUpdate(stage) {
+  if (stage.platform === 'windows') {
+    await overwriteFilesOnWindows(stage);
+    return { restartMode: 'manual+setup' };
+  }
+  await copyTree(stage.stagedDir, stage.projectRoot, stage.logFile);
+  return { restartMode: 'manual' };
+}
+
+// ── Step 4: Windows only — launch setup.bat to recompile everything ─────────
+
+// Opens ONE new console window running setup.bat (npm install backend +
+// frontend, vite build, postgres init if ever needed). The window is
+// detached, so it survives this backend process, shows its own output and
+// stays open on "Setup completed successfully!" (pause at the end of the
+// script). Note: when the backend runs as a Windows service the window lives
+// in session 0 (not visible on the desktop) — the service is simply restarted
+// after the recompilation, as stated in the UI message.
+export function launchWindowsSetup(stage) {
+  const child = spawn('cmd.exe', ['/d', '/c', 'setup.bat'], {
+    cwd: stage.projectRoot,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false
+  });
+  child.unref();
+  appendLog(stage.logFile, `setup.bat launched in a new window (pid ${child.pid}).`);
+  // When the setup window closes, the update flow is over: delete temp_update.
+  // If this backend exits first (e.g. the service is restarted while setup is
+  // still running), the next backend start deletes the folder anyway.
+  const onSetupDone = () => { cleanupStagedArtifacts(); };
+  child.on('exit', onSetupDone);
+  child.on('error', onSetupDone);
+  return child.pid;
+}
+
+// ── Step 4 (Docker/Linux): silent dependency refresh in the background ──────
+
+// Keeps the container/app restart safe: without it, a restart with a stale
+// node_modules volume would run new code against old dependencies.
+// Docker: npm runs in /app so packages land in the persistent node_modules
+// volume. Linux native: npm install backend + frontend build (dist swap).
+// Windows does nothing here: setup.bat already did everything, visibly.
+export async function refreshDependencies(stage) {
+  if (stage.platform === 'windows') return; // cleaned when the setup window closes
+  try {
+    await npmInstallBackend(stage);
+    if (stage.platform === 'linux') {
+      await buildFrontend(stage);
+    }
+    await appendLog(stage.logFile, 'background dependency refresh completed.');
+  } catch (err) {
+    await appendLog(stage.logFile, `background dependency refresh error: ${err?.stack || err}`);
+  } finally {
+    // Update flow fully over: remove the transient temp_update folder.
+    await cleanupStagedArtifacts();
+  }
 }
 
 async function npmInstallBackend(stage) {
@@ -402,134 +616,27 @@ async function buildFrontend(stage) {
   return false;
 }
 
-// ── Apply: Windows (WinSW service or standalone) ─────────────────────────────
-
-export function buildWindowsApplyScript(stage) {
-  const root = stage.projectRoot;
-  const src = stage.stagedDir;
-  const log = stage.logFile;
-  const pid = process.pid;
-
-  // NOTE: written with CRLF line endings; the wait loop intentionally avoids
-  // parenthesized blocks so no delayed expansion is required.
-  return [
-    '@echo off',
-    'setlocal EnableExtensions',
-    `set "ROOT=${root}"`,
-    `set "SRC=${src}"`,
-    `set "LOG=${log}"`,
-    `set "OLDPID=${pid}"`,
-    'set "NODEBIN=%ROOT%\\node-bin"',
-    'set "PATH=%NODEBIN%;%PATH%"',
-    'set /a TRIES=0',
-    '',
-    `echo [%date% %time%] updater: waiting for backend process %OLDPID% to exit...> "%LOG%"`,
-    ':waitloop',
-    'tasklist /FI "PID eq %OLDPID%" 2>nul | find /I "%OLDPID%" >nul',
-    'if not %errorlevel%==0 goto waited',
-    'set /a TRIES+=1',
-    'if %TRIES% GEQ 60 goto waited',
-    'ping -n 2 127.0.0.1 >nul',
-    'goto waitloop',
-    ':waited',
-    'echo [%date% %time%] updater: backend stopped.>> "%LOG%"',
-    '',
-    'sc query ZSecTools_Backend >nul 2>&1',
-    'if %errorlevel%==0 net stop ZSecTools_Backend >> "%LOG%" 2>&1',
-    '',
-    'echo [%date% %time%] updater: copying new files...>> "%LOG%"',
-    'robocopy "%SRC%" "%ROOT%" /E ^',
-    '  /XD node_modules .git temp_update CodeSecurity postgres node-bin TABLES-EXPORT logs dist_old dist_new ^',
-    '  /XF .env pwfile.txt SAP-TABLE-LIST.txt update.log apply-update.cmd installation_log.txt node.zip postgres.zip >> "%LOG%" 2>&1',
-    'echo robocopy exit code: %errorlevel% >> "%LOG%"',
-    '',
-    'echo [%date% %time%] updater: installing backend dependencies...>> "%LOG%"',
-    'pushd "%ROOT%\\backend"',
-    'if exist "%NODEBIN%\\npm.cmd" (',
-    '  call "%NODEBIN%\\npm.cmd" install --ignore-scripts --no-audit --no-fund >> "%LOG%" 2>&1',
-    ') else (',
-    '  call npm install --ignore-scripts --no-audit --no-fund >> "%LOG%" 2>&1',
-    ')',
-    'echo backend npm install exit code: %errorlevel% >> "%LOG%"',
-    'popd',
-    '',
-    'echo [%date% %time%] updater: rebuilding frontend...>> "%LOG%"',
-    'pushd "%ROOT%\\frontend"',
-    'if exist "%NODEBIN%\\npm.cmd" (',
-    '  call "%NODEBIN%\\npm.cmd" install --no-audit --no-fund >> "%LOG%" 2>&1',
-    '  call "%NODEBIN%\\npm.cmd" run build -- --outDir dist_new --emptyOutDir >> "%LOG%" 2>&1',
-    ') else (',
-    '  call npm install --no-audit --no-fund >> "%LOG%" 2>&1',
-    '  call npm run build -- --outDir dist_new --emptyOutDir >> "%LOG%" 2>&1',
-    ')',
-    'echo frontend build exit code: %errorlevel% >> "%LOG%"',
-    'if exist "%ROOT%\\frontend\\dist_new" (',
-    '  if exist "%ROOT%\\frontend\\dist" ren "%ROOT%\\frontend\\dist" "dist_old"',
-    '  ren "%ROOT%\\frontend\\dist_new" "dist"',
-    '  if exist "%ROOT%\\frontend\\dist_old" rmdir /s /q "%ROOT%\\frontend\\dist_old"',
-    ')',
-    'popd',
-    '',
-    'echo [%date% %time%] updater: restarting backend...>> "%LOG%"',
-    'sc query ZSecTools_Backend >nul 2>&1',
-    'if %errorlevel%==0 (',
-    '  net start ZSecTools_Backend >> "%LOG%" 2>&1',
-    ') else (',
-    '  start "ZSecTools Backend" /D "%ROOT%" "%NODEBIN%\\node.exe" ".\\backend\\src\\server.js"',
-    ')',
-    'echo [%date% %time%] updater: done.>> "%LOG%"',
-    'exit /b 0',
-    ''
-  ].join('\r\n');
-}
-
-async function applyOnWindows(stage) {
-  const tempDir = path.dirname(stage.logFile);
-  const scriptPath = path.join(tempDir, 'apply-update.cmd');
-  await fs.writeFile(scriptPath, buildWindowsApplyScript(stage), 'utf-8');
-
-  // Detached: must survive the death of this node process
-  const child = spawn('cmd.exe', ['/d', '/c', scriptPath], {
-    detached: true,
-    stdio: 'ignore',
-    cwd: tempDir,
-    windowsHide: true
-  });
-  child.unref();
-  await appendLog(stage.logFile, `apply-update.cmd spawned (pid ${child.pid}).`);
-  return { restartMode: 'script' };
-}
-
-// ── Apply: Linux / Docker (in-place, then exit) ──────────────────────────────
-
-async function applyOnUnix(stage) {
-  await copyTree(stage.stagedDir, stage.projectRoot, stage.logFile);
-  await npmInstallBackend(stage);
-  await buildFrontend(stage);
-  await appendLog(stage.logFile, 'in-place apply completed.');
-  return { restartMode: 'in-process' };
-}
-
-export async function applyStagedUpdate(stage) {
-  if (stage.platform === 'windows') return applyOnWindows(stage);
-  return applyOnUnix(stage);
-}
-
-// Called once at backend startup: removes the bulky staged copy of the last
-// update while keeping update-info.json / update.log for diagnostics.
+// Removes the whole transient temp_update folder (staged copy, release.zip,
+// update-info.json, update.log). Called when the update flow is fully over
+// (setup window closed on Windows / dependency refresh done on Linux-Docker)
+// and once at every backend start as a safety net for updates that never
+// completed. Best effort: a still-locked folder is simply retried at the next
+// backend start.
 export async function cleanupStagedArtifacts() {
   try {
     const env = detectEnvironment();
-    const stagedRoot = path.join(env.projectRoot, 'temp_update', 'staged');
-    const zipPath = path.join(env.projectRoot, 'temp_update', 'release.zip');
-    await fs.rm(stagedRoot, { recursive: true, force: true });
-    await fs.rm(zipPath, { force: true });
+    await fs.rm(path.join(env.projectRoot, 'temp_update'), {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 500
+    });
   } catch {
-    /* never block startup */
+    /* never block startup or the update flow */
   }
 }
 
-// ── Release resolution (used by /api/settings/check-update) ──────────────────
+// ── Release resolution (used by /api/settings/check-update) ─────────────────
 
 export async function resolveLatestRelease() {
   const currentVersion = await getBackendVersion();

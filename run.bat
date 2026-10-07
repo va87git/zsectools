@@ -10,12 +10,19 @@ set "DB_NAME=appdb"
 set "DB_USER=appuser"
 set "DB_PASSWORD=apppassword"
 
-echo Starting PostgreSQL Core Server...
-"%PG_BIN%\pg_ctl.exe" -D "%PG_DATA%" -l "%BASE_DIR%postgres\log.txt" start
+:: Idempotent start: if PostgreSQL is already running (previous launch or a
+:: self-update that kept the database alive), reuse it instead of failing.
+"%PG_BIN%\pg_ctl.exe" -D "%PG_DATA%" status >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Failed to start PostgreSQL. Check postgres\log.txt for details.
-    pause
-    exit /b 1
+    echo Starting PostgreSQL Core Server...
+    "%PG_BIN%\pg_ctl.exe" -D "%PG_DATA%" -l "%BASE_DIR%postgres\log.txt" start
+    if errorlevel 1 (
+        echo [ERROR] Failed to start PostgreSQL. Check postgres\log.txt for details.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [INFO] PostgreSQL is already running: reusing the existing instance.
 )
 
 :: Verification loop to ensure database engine availability

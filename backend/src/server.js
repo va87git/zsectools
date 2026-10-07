@@ -101,6 +101,8 @@ import {
   getBackendVersion,
   isInsecureTlsAllowed,
   isAllowedDownloadUrl,
+  launchWindowsSetup,
+  refreshDependencies,
   resolveLatestRelease,
   stageUpdate
 } from './updater.js';
@@ -219,44 +221,49 @@ app.post('/api/settings/apply-update', async (req, res) => {
       });
     }
 
-    // Download + extract the release into temp_update/
+    // 1) Download + extract the release into temp_update/
     const stage = await stageUpdate(downloadUrl);
 
+    // 2) Overwrite the project files (runtime data is never touched)
+    await applyStagedUpdate(stage);
+
+    // 3) Tell the user what happened and what to do next. The backend keeps
+    //    running: nothing is killed, no console is closed, no process exits.
     const messages = {
-      windows: 'Update staged. The updater will replace the files, rebuild the frontend and restart the backend (service ZSecTools_Backend or standalone node). The app will be unavailable for a few minutes: wait, then refresh this page.',
-      linux: 'Update staged. Files are being replaced and the frontend rebuilt: the backend restarts automatically (systemd) or re-run ./run.sh if you started it manually. Refresh this page in a few minutes.',
-      docker: 'Update staged. Files are being replaced in the project folder: the backend container restarts automatically and the frontend dev server hot-reloads. Refresh this page in a few minutes.'
+      windows:
+        'Download of the new version completed: all files have been replaced.\n\n' +
+        'Recompilation is starting now in a new window (setup.bat). When it has finished:\n' +
+        '- If ZSecTools is installed as a Windows service: restart the services, then refresh this page (F5).\n' +
+        '- If you started the app with run.bat: just refresh this page (F5).\n' +
+        '- If you are on Docker: restart the container instead.',
+      linux:
+        'Download of the new version completed: all files have been replaced.\n\n' +
+        'Dependencies are being refreshed and the frontend rebuilt in the background.\n' +
+        'When done, restart the application (./run.sh or the systemd service), then refresh this page (F5).',
+      docker:
+        'Download of the new version completed: all files have been replaced.\n\n' +
+        'To run the new version, restart the Docker container(s), then refresh this page (F5).'
     };
 
-    // Respond first, then perform the platform-specific apply.
     res.json({ ok: true, message: messages[env.platform] || messages.linux, platform: env.platform });
 
+    // 4) Windows only: launch setup.bat in one new console window to
+    //    recompile everything. Docker/Linux: silent npm refresh in the
+    //    background so the container/app restart finds the right packages.
     if (env.platform === 'windows') {
-      // The .cmd script waits for this process to exit, then does the work.
-      await applyStagedUpdate(stage);
-      setTimeout(() => process.exit(0), 1500);
+      launchWindowsSetup(stage);
     } else {
-      // In-place apply while the old process is still serving, then exit:
-      // systemd (Restart=always) / docker restart policy brings the new one up.
-      setTimeout(async () => {
-        try {
-          await applyStagedUpdate(stage);
-        } catch (err) {
-          console.error('[Apply Update Error]:', err);
-          await fs.appendFile(stage.logFile, `[${new Date().toISOString()}] APPLY ERROR: ${err?.stack || err}\n`).catch(() => {});
-        } finally {
-          setTimeout(() => process.exit(0), 800);
-        }
-      }, 1000);
+      refreshDependencies(stage).catch(() => {});
     }
   } catch (error) {
-    applyUpdateRunning = false;
     console.error('[Apply Update Error]:', error);
     if (res.headersSent) return;
     res.status(500).json({
       ok: false,
-      error: error?.message || 'Failed to stage the update'
+      error: error?.message || 'Failed to apply the update'
     });
+  } finally {
+    applyUpdateRunning = false;
   }
 });
 

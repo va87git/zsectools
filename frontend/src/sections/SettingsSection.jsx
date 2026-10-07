@@ -252,12 +252,6 @@ export default function SettingsSection({ ctx }) {
             <p style={{ color: 'var(--success)', marginTop: 10, whiteSpace: 'pre-wrap' }}>{updateSuccess}</p>
           ) : null}
 
-          {updateRestarting ? (
-            <p style={{ color: 'var(--text-muted)', marginTop: 6 }}>
-              Waiting for the backend to restart with the new version... (this page keeps checking automatically)
-            </p>
-          ) : null}
-
           {updateInfo ? (
             <div style={{ marginTop: 12 }}>
               {updateInfo.hasUpdate ? (
@@ -290,7 +284,7 @@ export default function SettingsSection({ ctx }) {
                       onClick={handleApplyUpdate}
                       disabled={applyLoading}
                     >
-                      {applyLoading ? 'Downloading && staging...' : 'Update now'}
+                      {applyLoading ? 'Downloading update...' : 'Update now'}
                     </button>
                   )}
                 </div>
@@ -318,8 +312,7 @@ export default function SettingsSection({ ctx }) {
   sapHealth, sdkDiag, sdkDiagError, sdkPath,
   sdkPathError, sdkPathInfo, selectedRealm, setAppHealth,
   setDbHealth, setSettingsTab, settingsTab, updateError,
-  updateInfo, updateLoading, applyLoading, updateSuccess,
-  updateRestarting
+  updateInfo, updateLoading, applyLoading, updateSuccess
   } = ctx;
 
     const tabBtn = (active) => ({
@@ -358,4 +351,3 @@ export default function SettingsSection({ ctx }) {
     );
 
 }
-

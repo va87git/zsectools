@@ -13,3 +13,4 @@ node-bin/
 postgres/
 **/CodeSecurity/*
 !CodeSecurity/codeSecurityChecksExample.txt
+temp_update/
