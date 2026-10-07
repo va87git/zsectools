@@ -14,6 +14,7 @@
 - [Settings](#settings)
   - [General](#general)
   - [Health Checks](#health-checks)
+  - [Software Updates](#software-updates)
 - [Technical Connection Information](#technical-connection-information)
   - [User ID and Connection](user-id-and-connection)
   - [Authorizations](#authorizations)
