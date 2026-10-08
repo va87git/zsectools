@@ -1,0 +1,42 @@
+' ============================================================================
+'  zsectools portable SAP extractor - connection template
+' ---------------------------------------------------------------------------
+'  HOW TO USE
+'    1. copy this file to a file named "connection" (no extension), in the
+'       same folder as sap-extractor.vbs
+'    2. fill in the values of your SAP system
+'    3. "connection" contains your system data: keep it PRIVATE - add it to
+'       .gitignore and never include it in update packages. This
+'       connection.example file is the only one that may be committed.
+'
+'  FORMAT
+'    KEY = VALUE, one per line. Lines starting with ', # or ; are comments
+'    (inline comments after a value are allowed too, if preceded by a space).
+'    Values may optionally be wrapped in double quotes.
+'    Save as ANSI or UTF-8 WITHOUT BOM (Notepad: "UTF-8" is fine, do NOT
+'    choose "UTF-8 with BOM").
+'
+'  KEYS
+'    SAP_SYSTEM    SAP system ID (SID) shown in the logon
+'    SAP_ASHOST    application server host name or IP address
+'    SAP_SYSNR     system number, two digits (e.g. 01)
+'    SAP_CLIENT    client (mandante), three digits
+'    SAP_USER      RFC user; leave empty to be asked at runtime (recommended
+'                  on machines you do not own: no password stored on disk)
+'    SAP_PASSWORD  password; leave empty to be asked at runtime
+'    SAP_LANG      logon language (default EN)
+'    SAP_ROUTER    SAProuter string (e.g. /H/router.host/S/3299/W/pwd/H/);
+'                  leave empty for a direct connection
+'    SYSTEM_ID     label used only in the statistics file name
+'                  (optional, defaults to SAP_SYSTEM)
+' ============================================================================
+
+SAP_SYSTEM    = S4H
+SAP_ASHOST    = sap-host.example.com
+SAP_SYSNR     = 01
+SAP_CLIENT    = 100
+SAP_USER      =
+SAP_PASSWORD  =
+SAP_LANG      = EN
+SAP_ROUTER    =
+SYSTEM_ID     = S4H

@@ -14,3 +14,5 @@ postgres/
 **/CodeSecurity/*
 !CodeSecurity/codeSecurityChecksExample.txt
 temp_update/
+/tools/sap-extractor-portable/connection
+/tools/sap-extractor-portable/TABLES-EXPORT/
