@@ -58,6 +58,10 @@ Format: `KEY = VALUE`, one per line; lines starting with ', # or ; are comments 
 
 ## Usage
 
+Copy this folder to the workstation you need.
+
+Perform every configuration step.
+
 Double-click **`sap-extractor-run.bat`**. The script runs in a console window and asks, in order (**only once per run**: the questions are not repeated when the extractor restarts itself, see *Unattended restarts* below):
 
 ```text
