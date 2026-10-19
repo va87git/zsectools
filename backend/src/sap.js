@@ -48,6 +48,8 @@ export const RFC_SCHEMAS = {
       tables: {
       'ACTIVITY_GROUPS': 'AGR_NAME'
       },
+      // Rows are grouped by composite role and sent in one RFC call per group (see executeBapiBatch)
+      bulk: { groupBy: 'ACTIVITY_GROUP', listField: 'ACTIVITY_GROUPS', chunkSize: 200 },
       examples: {
         // introduction text
         note: 'CSV/TSV file (tab-separated). The first line is the header with the field names.',
@@ -70,6 +72,7 @@ export const RFC_SCHEMAS = {
       tables: {
       'ACTIVITY_GROUPS': 'AGR_NAME'
     },
+        bulk: { groupBy: 'ACTIVITY_GROUP', listField: 'ACTIVITY_GROUPS', chunkSize: 200 },
         successIndicator: { field: 'ACTIVITY_GROUPS', nonEmpty: true },
         examples: {
           // introduction text
@@ -889,8 +892,15 @@ export async function executeSingleRFC(sapConfig, rfcCommand, parameters) {
 
 // Function to execute an RFC batch
 
-// onProgress (optional): called after each row with { current, total, succeeded, failed }
+// onProgress (optional): called after each row (or each bulk call) with { current, total, succeeded, failed }
 export async function executeBapiBatch(sapConfig, rfcCommand, rows, onProgress = null) {
+  const schema = RFC_SCHEMAS[rfcCommand];
+  // RFCs with a table input (e.g. add/remove single roles to composite) are sent in bulk:
+  // one call per composite role instead of one connection + one call per row.
+  if (schema && schema.bulk) {
+    return executeBulkBapiBatch(sapConfig, rfcCommand, schema, rows, onProgress);
+  }
+
   const results = [];
   let succeeded = 0;
   let failed = 0;
@@ -921,6 +931,99 @@ export async function executeBapiBatch(sapConfig, rfcCommand, rows, onProgress =
       } catch { /* a progress callback failure must never stop the batch */ }
     }
   }
+  return results;
+}
+
+// Bulk variant: rows are grouped by schema.bulk.groupBy (e.g. the composite role) and the values of
+// schema.bulk.listField (e.g. the single roles) of each group are sent as ONE table parameter.
+// The result array keeps one entry per input row (same shape and order as the row-by-row execution),
+// so the frontend does not need any change.
+//
+// If a bulk call fails, the same group is retried row by row, so that a single bad role does not
+// mark the whole group as failed and each row gets its own message.
+async function executeBulkBapiBatch(sapConfig, rfcCommand, schema, rows, onProgress) {
+  const { groupBy, listField, chunkSize = 200 } = schema.bulk;
+  const results = new Array(rows.length);
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  const notify = () => {
+    if (!onProgress) return;
+    try {
+      onProgress({ current: processed, total: rows.length, succeeded, failed });
+    } catch { /* a progress callback failure must never stop the batch */ }
+  };
+  const mark = (rowIdxs, status, message, data) => {
+    for (const idx of rowIdxs) {
+      results[idx] = {
+        rowIndex: idx + 1,
+        status,
+        message,
+        data: status === 'success' ? data : rows[idx]
+      };
+    }
+    processed += rowIdxs.length;
+    if (status === 'success') succeeded += rowIdxs.length; else failed += rowIdxs.length;
+  };
+
+  // 1. group rows: group key -> (list value -> row indexes). Duplicated rows are sent to SAP only once
+  //    but every original row still gets its own result entry.
+  const groups = new Map();
+  rows.forEach((row, idx) => {
+    const key = String(row?.[groupBy] ?? '').trim();
+    const item = String(row?.[listField] ?? '').trim();
+    if (!key || !item) {
+      mark([idx], 'error', `Missing required field: ${!key ? groupBy : listField}`);
+      return;
+    }
+    if (!groups.has(key)) groups.set(key, new Map());
+    const items = groups.get(key);
+    if (!items.has(item)) items.set(item, []);
+    items.get(item).push(idx);
+  });
+  if (processed > 0) notify();
+
+  // 2. one RFC call per group (split in chunks to keep SAP calls and progress updates reasonable)
+  for (const [key, items] of groups) {
+    const entries = [...items.entries()]; // [ [item, [rowIdx, ...]], ... ]
+    for (let i = 0; i < entries.length; i += chunkSize) {
+      const chunk = entries.slice(i, i + chunkSize);
+      const chunkRowIdxs = chunk.flatMap(([, idxs]) => idxs);
+      const baseRow = rows[chunkRowIdxs[0]];
+
+      try {
+        const result = await executeSingleRFC(sapConfig, rfcCommand, {
+          ...baseRow,
+          [groupBy]: key,
+          [listField]: chunk.map(([item]) => item)
+        });
+        mark(chunkRowIdxs, 'success', result.message, result.data);
+        notify();
+      } catch (bulkErr) {
+        console.error(`[SAP RFC] Bulk call failed for ${key} (${chunk.length} items), retrying row by row: ${bulkErr.message}`);
+        if (chunk.length === 1) {
+          mark(chunkRowIdxs, 'error', bulkErr.message);
+          notify();
+          continue;
+        }
+        for (const [item, idxs] of chunk) {
+          try {
+            const result = await executeSingleRFC(sapConfig, rfcCommand, {
+              ...rows[idxs[0]],
+              [groupBy]: key,
+              [listField]: item
+            });
+            mark(idxs, 'success', result.message, result.data);
+          } catch (err) {
+            mark(idxs, 'error', err.message);
+          }
+          notify();
+        }
+      }
+    }
+  }
+
   return results;
 }
 
