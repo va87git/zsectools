@@ -12,14 +12,14 @@ echo ===================================================
 if exist "%BASE_DIR%\node-bin\node.exe" (
     echo [OK] Node.js Portable is already configured in node-bin.
 ) else (
-    echo [INFO] Downloading Node.js v24.18.0...
-    curl -L "https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip" -o "%BASE_DIR%\node.zip"
+    echo [INFO] Downloading Node.js v24.22.2...
+    curl -L "https://nodejs.org/dist/v24.22.2/node-v24.22.2-win-x64.zip" -o "%BASE_DIR%\node.zip"
     if errorlevel 1 (
         echo [ERROR] Curl failed to download Node.js.
         pause
         exit /b 1
     )
-    
+
     echo [INFO] Extracting Node.js...
     tar -xf "%BASE_DIR%\node.zip" -C "%BASE_DIR%"
     if errorlevel 1 (
@@ -27,17 +27,17 @@ if exist "%BASE_DIR%\node-bin\node.exe" (
         pause
         exit /b 1
     )
-    
+
     echo [INFO] Normalizing Node.js directory name...
     if exist "%BASE_DIR%\node-bin" rmdir /s /q "%BASE_DIR%\node-bin"
-    
-    rename "%BASE_DIR%\node-v24.18.0-win-x64" "node-bin"
+
+    rename "%BASE_DIR%\node-v24.22.2-win-x64" "node-bin"
     if errorlevel 1 (
         echo [ERROR] Failed to rename node folder to node-bin.
         pause
         exit /b 1
     )
-    
+
     del "%BASE_DIR%\node.zip"
 )
 
@@ -52,7 +52,7 @@ if exist "%BASE_DIR%\postgres\bin\pg_ctl.exe" (
         pause
         exit /b 1
     )
-    
+
     echo [INFO] Extracting PostgreSQL...
     tar -xf "%BASE_DIR%\postgres.zip" -C "%BASE_DIR%"
     if errorlevel 1 (
@@ -60,10 +60,10 @@ if exist "%BASE_DIR%\postgres\bin\pg_ctl.exe" (
         pause
         exit /b 1
     )
-    
+
     echo [INFO] Normalizing PostgreSQL directory name...
     if exist "%BASE_DIR%\postgres" rmdir /s /q "%BASE_DIR%\postgres"
-    
+
     if exist "%BASE_DIR%\pgsql" (
         rename "%BASE_DIR%\pgsql" "postgres"
     ) else (
@@ -71,7 +71,7 @@ if exist "%BASE_DIR%\postgres\bin\pg_ctl.exe" (
         pause
         exit /b 1
     )
-    
+
     del "%BASE_DIR%\postgres.zip"
 )
 
@@ -97,21 +97,21 @@ if exist "%PG_DATA%\PG_VERSION" (
     echo [OK] PostgreSQL cluster is already initialized.
 ) else (
     echo [INFO] Checking Database initialization prerequisites...
-    
+
     :: Automated fallback: If pwfile.txt is missing, we create a temporary one to prevent initdb from crashing
     if not exist "%BASE_DIR%\pwfile.txt" (
         echo [WARN] pwfile.txt was missing! Generating a default one for setup...
         echo apppassword> "%BASE_DIR%\pwfile.txt"
     )
-    
+
     if not exist "%PG_DATA%" mkdir "%PG_DATA%"
-    
+
     echo [INFO] Executing initdb.exe core routine...
     echo Target Path: "%PG_BIN%\initdb.exe"
-    
+
     :: Run initdb dynamically and capture direct errors without closing window
     "%PG_BIN%\initdb.exe" -D "%PG_DATA%" -U appuser -A md5 --pwfile="%BASE_DIR%\pwfile.txt" -E UTF8
-    
+
     if errorlevel 1 (
         echo.
         echo [CRITICAL ERROR] initdb.exe failed with exit code %errorlevel%.
