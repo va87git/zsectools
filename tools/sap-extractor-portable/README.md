@@ -49,8 +49,31 @@ All connection settings live in a plain-text file named `connection` (no extensi
 | `SAP_LANG` | Logon language |
 | `SAP_ROUTER` | SAProuter string, if needed to reach the system |
 | `SYSTEM_ID` | Label used only in the statistics file name |
+| `SAP_SSO` | `1` / `true` / `yes` = **SSO/SNC logon** (v9): the logon goes through the SAP Logon entry named in `SAP_LOGON_ENTRY`, which carries the SNC configuration; no user / password is asked or needed. Empty = classic user/password logon |
+| `SAP_LOGON_ENTRY` | Name of the **SAP Logon (saplogon.ini) entry** used when `SAP_SSO` is enabled (optional, defaults to `SAP_SYSTEM`). The entry must exist in SAP Logon and must carry the SNC configuration |
 
 Format: `KEY = VALUE`, one per line; lines starting with ', # or ; are comments (inline comments after a value are allowed too, if preceded by a space); values may be double-quoted; save as ANSI or UTF-8 **without BOM**. If the file is missing or the system coordinates are not filled in, the script stops with a clear message.
+
+An existing `connection` file written for a previous version keeps working unchanged: the two new keys are optional and default to the classic user/password logon.
+
+### SSO / SNC logon (v9)
+
+On machines where the SAP user must not (or cannot) type credentials, the extractor can log on through **SAP Logon SSO/SNC**:
+
+```text
+SAP_SSO         = 1
+SAP_LOGON_ENTRY = PROD
+```
+
+How it works:
+
+- the logon is performed through the **saplogon.ini entry** named in `SAP_LOGON_ENTRY` (default: the value of `SAP_SYSTEM`): the entry must exist in SAP Logon and must carry the SNC configuration (SNC name, SNC quality of protection, SSO flag). Test it by logging on with SAP Logon first;
+- **no user / password is asked, prompted or validated**: steps 0a/0b of the console flow are skipped, and the worker does not require the credentials in its environment either;
+- the connection uses `UseSAPLogonIni = True` and overrides only client and language from the `connection` file;
+- the logon is **non-silent** in SSO mode (`Logon(0, False)`): SAP error dialogs are shown instead of a generic "logon failed", which makes SNC problems immediately visible;
+- everything else (statistics, tables, batching, resume) works exactly the same.
+
+Classic user/password logon remains the default: with `SAP_SSO` empty the extractor behaves exactly as before (ASHOST/SYSNR/SAP_ROUTER/credentials).
 
 `tables.txt` lists the tables to extract, one table name per line (empty lines and `#` comments are skipped). The file shipped with the extractor contains the AGR_* roles/authorizations tables used by zsectools reports; edit it to taste — it does not have to match zsectools' `SAP-TABLE-LIST.txt`, but the tables you want to use in zsectools reports must be present.
 
@@ -71,6 +94,8 @@ Step 1 - Do you also want to extract user statistics? (y/n)
 Step 2 - Period type (m=month, w=week, d=day)          <- only if step 1 = y
 Step 3 - Date in YYYYMMDD format (e.g. 20260528)       <- only if step 1 = y
 ```
+
+In **SSO mode** (`SAP_SSO = 1`) steps 0a/0b are skipped entirely: no user/password is asked, the SAP Logon entry authenticates (see *SSO / SNC logon* above).
 
 - **Step 4** (automatic): if you answered `y`, the user statistics are downloaded with the same RFC used by zsectools (`SWNC_COLLECTOR_GET_AGGREGATES`, `PERIODTYPE` = M/W/D, `PERIODSTRT` = period start, `COMPONENT` = `TOTAL`) and written to
   `TABLES-EXPORT\sap_statistics_<SYSTEM_ID>_<M|W|D>_<YYYYMMDD>.txt`. SAP keys the aggregates by the **first day of the period** (`M` -> 1st of the month, `W` -> Monday, `D` -> the date itself), so the extractor automatically snaps the date typed in Step 3 to the period start and prints the value it used.
@@ -96,7 +121,7 @@ The SAP GUI OCX slowly degrades the memory of the 32-bit `cscript.exe`; on big e
 | 4 | SAP logon failed | **never retried** at the first logon (a wrong password must not lock the SAP user) |
 | 5 | configuration problem (OCX not registered, credentials missing) | stop |
 
-Credentials are passed to the worker through its process environment only: they are never written to disk and never appear on a command line. Resume is automatic because a table's `.txt` is created only when the table is complete; a table that fails with an RFC error is remembered for the session (not retried at every relaunch) and listed in the final summary. Every launch, exit code, failed table and skipped record is written to **`sap-extractor.log`** (next to the script; no passwords, no SAP data unless `LOG_RECORD_SAMPLE = True`).
+Credentials are passed to the worker through its process environment only: they are never written to disk and never appear on a command line (in SSO mode no credentials exist at all). Resume is automatic because a table's `.txt` is created only when the table is complete; a table that fails with an RFC error is remembered for the session (not retried at every relaunch) and listed in the final summary. Every launch, exit code and failed table is written to **`sap-extractor.log`** (next to the script; no passwords, no SAP data).
 
 When finished you can close the window (`pause` keeps it open so you can read the summary). Copy the whole `TABLES-EXPORT` folder somewhere you can reach zsectools from.
 
@@ -109,12 +134,12 @@ Table files (`TABLES-EXPORT\<TABLE>.txt`) are UTF-8 (without BOM), tab-separated
 ```text
 # Table: AGR_USERS
 # TYPES: text|text|date|text|time without time zone|numeric|...
-mandt	agr_name	user_name	from_dat	to_dat	...
-100	Z_TEST	SMITH	2024-01-01	2024-12-31	...
+mandt   agr_name        user_name       from_dat        to_dat  ...
+100     Z_TEST  SMITH   2024-01-01      2024-12-31      ...
 ```
 
 - Line 1: `# Table: <NAME>` — the table identity (used by the zsectools import).
-- Line 2: `# TYPES: <pg types joined by |>` — the PostgreSQL column types, mapped from the SAP DDIC types with the **same** `mapSapTypeToPg` rules used by zsectools.
+- Line 2: `# TYPES: <pg types joined by tab>` — the PostgreSQL column types, mapped from the SAP DDIC types with the **same** `mapSapTypeToPg` rules used by zsectools.
 - Line 3: header (lowercase field names, tab-separated) — taken from the FIELDS metadata returned by RFC, so the header always matches the data.
 - Following lines: the data. Dates are normalized to `YYYY-MM-DD`, times to `HH:MM:SS`, empty SAP dates (`00000000`), empty times (`000000`) and **invalid** values (e.g. `04041417` in a DATS column) are written as empty cells — the same validation zsectools applies to its own RFC downloads. Numeric (`P`) values are validated; everything else is kept as text.
 
@@ -122,8 +147,8 @@ Statistics files start with `# PERIOD_TYPE: X` followed by the header and rows:
 
 ```text
 # PERIOD_TYPE: D
-selected_at	account	entry_id	entry_count	...	action	actiontype
-2026-05-28T00:00:00.000Z	SMITH	SU01               T	42	...	SU01	T
+selected_at     account entry_id        entry_count     ...     action  actiontype
+2026-05-28T00:00:00.000Z        SMITH   SU01               T    42      ...     SU01    T
 ```
 
 The `action` and `actiontype` columns are derived from `ENTRY_ID` with the same parsing zsectools uses (last character = `actiontype`, the rest trimmed = `action`), so the STAT reports work out of the box.
@@ -137,11 +162,11 @@ The `action` and `actiontype` columns are derived from `ENTRY_ID` with the same 
 | Field selections | `USR02`, `ADRP`, `PA0002`, `TDEVC`, `TBTCO`, `TBTCP`, `USRACL` use the same restricted field lists (`TABLE_FIELD_OVERRIDES`) — required because these tables exceed the `RFC_READ_TABLE` 512-byte row limit | same |
 | WHERE filters | `TADIR` (transactions + programs), `AGR_TEXTS` (SPRAS I/E), `AGR_HIERT` (SPRAS I/E/D), `TOBJT` (LANGU E/I) | same |
 | Batch size | `RFC_READ_TABLE` with `ROWSKIPS` stepping by `ROWCOUNT` = 50.000 rows (zsectools: 100.000; smaller to keep the OCX buffers small), stop when a batch returns fewer rows | same logic |
-| WA delimiter | `\|` (same as `readSapTable`) | same |
+| WA parsing | `RFC_READ_TABLE` called **without** `DELIMITER`: every field is sliced out of the WA row with the `OFFSET`/`LENGTH` returned in the FIELDS table (`Mid(WA, offset + 1, length)`) | `parseReadTableRows` in `sap.js` (`raw.substring(offset, offset + length)`) — same |
 | Type mapping | `D→date`, `T→time without time zone`, `I→integer`, `F→double precision`, `P→numeric`, `b→smallint`, everything else → `text` | `mapSapTypeToPg` |
 | Value normalization | dates/times validated and normalized, invalid → empty; integer (`I`, `b`) and float (`F`) fields validated (SAP trailing minus `5-` → `-5`), invalid → empty | `convertSapDate` / `convertSapTime` / `convertSapPacked` / `convertSapInteger` / `convertSapFloat` |
 | Dirty values | NUL and other control characters removed from every value (tab/CR/LF → space) | `CONTROL_CHARS_RE` in `sapImport.js` |
-| Delimiter inside a value | the record is **skipped and logged** (otherwise every following column is shifted: text in a date column…) | `parseReadTableRows` |
+| Value containing `\|` | never a problem: no delimiter is used anymore (v9), a value can contain any character and records are **never skipped** | same (offset/length parsing) |
 | Date format | `DATE_FORMAT = "ISO"` (`YYYY-MM-DD`) by default | dates are strings `YYYY-MM-DD` (no timezone conversion) |
 | File layout | `# Table:` + `# TYPES:` + header + tab-separated rows; `# PERIOD_TYPE:` for statistics | `exportTablesToTxt` / `exportStatisticsToTxt` |
 
@@ -163,12 +188,14 @@ One known difference is by design: source columns named `id` (e.g. `AGR_DATEU.id
 ## Limitations and troubleshooting
 
 - **512-byte row limit**: `RFC_READ_TABLE` cannot return rows wider than 512 bytes. The field overrides mentioned above exist for this reason; if you add a very wide table to `tables.txt` and get `DATA_BUFFER_EXCEEDED` / a short-dump on the SAP side, add a field override for it in `GetFieldOverride` (both in this script and, if you also download it directly, in zsectools).
+- **Records missing compared to SE16?** Versions before v9 skipped the records whose values contained the `|` delimiter (they were logged as `SKIPPED RECORD` in `sap-extractor.log`). v9 parses the rows by OFFSET/LENGTH and never skips anything: re-extract the table with `SKIP_EXISTING = False` (or just delete its `.txt`) to download the complete rows.
 - **"The extractor stops / goes in timeout"**: look at the last console lines and at `sap-extractor.log`. `row budget reached … planned restart` is **normal** (the supervisor relaunches by itself). `RFC_READ_TABLE error at batch N … SAP exception: …` is a SAP-side problem: check ST22 (e.g. `TIME_OUT` on very large tables, because every batch re-scans the rows skipped by `ROWSKIPS`) and SM21. A VBScript runtime error / `not enough memory` is a crash of the 32-bit process: the worker is relaunched automatically.
-- **`SKIPPED RECORD` / "record(s) SKIPPED" warnings**: the value of some field contains the `|` delimiter, so the record cannot be split reliably; it is left out instead of being written with shifted columns. The log gives table and record number (position in the `RFC_READ_TABLE` result).
 - **Old exports**: tables already present in `TABLES-EXPORT` are skipped (resume). Files produced by versions before v8 may contain `DD.MM.YYYY` dates or unfiltered control characters: delete them (or set `SKIP_EXISTING = False`) to extract them again.
 - **`RFC_READ_TABLE error for <table>`**: usually a missing `S_TABU_DIS` authorization for the table, or a table that does not exist in the target system. Check with SE11/SE16.
 - **No statistics rows**: `SWNC_COLLECTOR_GET_AGGREGATES` only returns data for periods that have been aggregated by the SAP workload collector; very recent dates (today) may not have daily aggregates yet, and monthly aggregates typically appear only after the month has closed.
 - **Statistics call failed**: the script prints the real `SAP exception:` line returned by the RFC. The most common causes are a missing `S_RFC` authorization for function group `SWNC_COLONNEL`, or no aggregates collected for the requested period (verify in ST03N which periods are available).
-- **Logon errors**: double-check ASHOST/SYSNR/CLIENT and the SAProuter string; the router string must contain the full route including the password part if the router requires one.
+- **`SKIPPED RECORD` in an old log**: messages produced by versions before v9 (delimiter collisions). v9 does not skip records anymore — see the bullet above.
+- **Logon errors**: double-check ASHOST/SYSNR/CLIENT and the SAProuter string; the router string must contain the full route including the password part if the router requires one. In **SSO mode** the logon uses the saplogon.ini entry instead: open SAP Logon on that machine and test the entry first. `partner 'host:sapdpNN' not reached` / `RFC_COMMUNICATION_FAILURE` is a **network problem (TCP), not an SNC problem**: the machine cannot reach the SAP dispatcher on that port (VPN / firewall / SAProuter of the entry).
 - **Nothing happens on double-click of the `.vbs`**: the file association opens it with `wscript.exe` (GUI host). Use `sap-extractor-run.bat`, which forces the 32-bit `cscript.exe`.
+- **SSO/SNC debugging**: to capture the low-level connection details, uncomment `RFC_TRACE` / `RFC_TRACE_DIR` at the top of `sap-extractor-run.bat`: the NW RFC trace files (`*.trc`, `dev_rfc.log`) appear next to the script and show every parameter passed to the RFC library (SNC name, QOP, SSO flag included). Remember to comment them back for normal runs.
 - The script never writes to the SAP system: only reads (`RFC_READ_TABLE`, `SWNC_COLLECTOR_GET_AGGREGATES`).

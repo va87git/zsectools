@@ -29,6 +29,15 @@
 '                  leave empty for a direct connection
 '    SYSTEM_ID     label used only in the statistics file name
 '                  (optional, defaults to SAP_SYSTEM)
+'    SAP_SSO       1/true/yes = SSO/SNC logon (v9): the logon goes through
+'                  the SAP Logon (saplogon.ini) entry named in
+'                  SAP_LOGON_ENTRY, which carries the SNC configuration; no
+'                  SAP_USER / SAP_PASSWORD is asked or needed.
+'                  Leave empty for the classic user/password logon
+'    SAP_LOGON_ENTRY  SAP Logon entry used when SAP_SSO is enabled
+'                  (optional, defaults to SAP_SYSTEM). The entry must exist
+'                  in saplogon.ini and must carry the SNC configuration
+'                  (test it by logging on with SAP Logon first)
 ' ============================================================================
 
 SAP_SYSTEM    = S4H
@@ -40,3 +49,5 @@ SAP_PASSWORD  =
 SAP_LANG      = EN
 SAP_ROUTER    =
 SYSTEM_ID     = S4H
+SAP_SSO       =
+SAP_LOGON_ENTRY =

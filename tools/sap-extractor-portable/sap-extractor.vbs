@@ -54,6 +54,28 @@
 '    - INT1 fields (type "b") are mapped to SMALLINT like zsectools does;
 '    - DATE_FORMAT defaults to ISO (YYYY-MM-DD): DD.MM.YYYY is read by
 '      PostgreSQL according to the server DateStyle (day/month can swap).
+'
+'  v9.1 - hotfix: the v9 FIELDS sanity check used a single-line
+'    "If i > 0 And fieldOffset(i) < fieldOffset(i - 1) Then ...": VBScript does
+'    NOT short-circuit And/Or, so at i = 0 the expression fieldOffset(-1) raised
+'    "Subscript out of range: -1" and killed the worker on the FIRST table of
+'    the run (every table ended up in "Tables NOT exported"). The check is now
+'    a nested If; an empty FIELDS metadata table now also fails the single table
+'    cleanly instead of crashing the worker. Everything else is unchanged v9.
+
+'  v9 - SSO/SNC logon + offset/length parsing:
+'    - new connection keys SAP_SSO / SAP_LOGON_ENTRY: when SAP_SSO is enabled
+'      the logon goes through the saplogon.ini entry named in SAP_LOGON_ENTRY
+'      (which carries the SNC configuration: SNC name, QOP, SSO flag) and NO
+'      user / password is prompted, requested or validated anywhere;
+'    - RFC_READ_TABLE is called WITHOUT the DELIMITER parameter: every field
+'      is sliced out of the WA row with the OFFSET/LENGTH metadata returned in
+'      the FIELDS table (exactly like parseReadTableRows in zsectools sap.js,
+'      raw.substring(offset, offset + length)). A value containing the old
+'      delimiter "|" can no longer shift the following columns, so NO record
+'      is ever skipped anymore: the v8 "SKIPPED RECORD" logic is gone;
+'    - control characters are cleaned from each value AFTER the slicing
+'      (cleaning the whole WA before slicing would shift the offsets).
 ' =============================================================================
 
 Option Explicit
@@ -72,12 +94,21 @@ SAP_PASSWORD   = ""                 ' empty = asked at runtime
 SAP_LANG       = ""
 SAP_ROUTER     = ""
 SYSTEM_ID      = ""              ' used only in the statistics file name
+' v9 - SSO / SNC: when SAP_SSO is enabled the logon goes through the SAP Logon
+' entry named in SAP_LOGON_ENTRY (saplogon.ini), which carries the SNC
+' configuration (SNC name, QOP, SSO flag): no SAP_USER / SAP_PASSWORD is
+' prompted, requested or validated anywhere.
+Dim SAP_SSO, SAP_LOGON_ENTRY
+SAP_SSO = False
+SAP_LOGON_ENTRY = ""
 
 LoadConnectionConfig
 
 ' Extraction behaviour (kept identical to zsectools):
 Const ROWS_PER_BATCH = 50000          ' zsectools uses 100000; 50000 keeps every SAP GUI OCX (wdtaocx) buffer small
-Const DELIMITER_CHAR = "|"             ' same WA delimiter as zsectools readSapTable
+' v9: no DELIMITER_CHAR anymore - RFC_READ_TABLE is called WITHOUT the
+' DELIMITER parameter and every field is sliced out of WA with the
+' OFFSET/LENGTH metadata of the returned FIELDS table (see BuildLine).
 
 ' Resume support: tables whose .txt already exists in the output folder
 ' are skipped. After a crash just re-run the script: it continues where
@@ -109,13 +140,10 @@ Const MAX_FAILED_RESTARTS = 3
 Const RETRY_WAIT_SEC      = 20
 Const MAX_LAUNCHES        = 200
 
-' Event log (restarts, failed tables, skipped records). It lives next to the
-' script, NOT in TABLES-EXPORT. It never contains passwords; it contains no
-' SAP data either unless LOG_RECORD_SAMPLE = True (first 80 chars of a skipped
-' record, useful to debug).
+' Event log (restarts, failed tables). It lives next to the script, NOT in
+' TABLES-EXPORT. It never contains passwords; since v9 it contains no SAP
+' data at all: records are never dumped and never skipped.
 Const LOG_FILE          = ".\sap-extractor.log"
-Const LOG_RECORD_SAMPLE = False
-Const MAX_LOGGED_SKIPS  = 20          ' skipped records logged in detail per table
 
 ' Worker exit codes (see header)
 Const EXIT_DONE   = 0
@@ -207,6 +235,8 @@ Sub LoadConnectionConfig
                     Case "SAP_LANG"     : SAP_LANG = val
                     Case "SAP_ROUTER"   : SAP_ROUTER = val
                     Case "SYSTEM_ID"    : SYSTEM_ID = val
+                    Case "SAP_SSO"         : SAP_SSO = (LCase(val) = "1" Or LCase(val) = "true" Or LCase(val) = "yes")
+                    Case "SAP_LOGON_ENTRY" : SAP_LOGON_ENTRY = val
                     Case Else           : WScript.Echo "Warning: unknown key in connection file: " & key
                 End Select
             End If
@@ -215,6 +245,9 @@ Sub LoadConnectionConfig
     cfgFile.Close
     If Trim(SAP_LANG) = "" Then SAP_LANG = "EN"
     If Trim(SYSTEM_ID) = "" Then SYSTEM_ID = SAP_SYSTEM
+    ' SSO logon defaults to the SAP system ID (saplogon.ini entries are
+    ' usually named after the SID)
+    If Trim(SAP_LOGON_ENTRY) = "" Then SAP_LOGON_ENTRY = SAP_SYSTEM
 End Sub
 
 ' ── MAIN ─────────────────────────────────────────────────────────────────────
@@ -269,21 +302,30 @@ Function RunSupervisor()
     On Error GoTo 0
 
     WScript.Echo "=== zsectools portable SAP extractor ==="
-    WScript.Echo "Target: " & SAP_SYSTEM & " (" & SAP_ASHOST & ":" & SAP_SYSNR & ", client " & SAP_CLIENT & ")"
+    If SAP_SSO Then
+        WScript.Echo "Target: " & SAP_SYSTEM & " (client " & SAP_CLIENT & ", SSO logon entry: " & SAP_LOGON_ENTRY & ")"
+    Else
+        WScript.Echo "Target: " & SAP_SYSTEM & " (" & SAP_ASHOST & ":" & SAP_SYSNR & ", client " & SAP_CLIENT & ")"
+    End If
     WScript.Echo ""
 
     ' Credentials: asked ONCE here, handed to the worker processes through
-    ' their environment (not on the command line, never written to disk)
-    If Trim(SAP_USER) = "" Then
-        WScript.StdOut.Write "Step 0a - SAP user: "
-        SAP_USER = Trim(WScript.StdIn.ReadLine)
+    ' their environment (not on the command line, never written to disk).
+    ' SSO/SNC mode (v9): nothing is asked, the SAP Logon entry authenticates
+    If Not SAP_SSO Then
+        If Trim(SAP_USER) = "" Then
+            WScript.StdOut.Write "Step 0a - SAP user: "
+            SAP_USER = Trim(WScript.StdIn.ReadLine)
+        End If
+        If Trim(SAP_PASSWORD) = "" Then
+            WScript.StdOut.Write "Step 0b - SAP password: "
+            SAP_PASSWORD = WScript.StdIn.ReadLine
+        End If
+        envP("ZSEC_SAP_USER") = SAP_USER
+        envP("ZSEC_SAP_PASSWORD") = SAP_PASSWORD
+    Else
+        WScript.Echo "SSO mode: no user / password requested (logon entry: " & SAP_LOGON_ENTRY & ")"
     End If
-    If Trim(SAP_PASSWORD) = "" Then
-        WScript.StdOut.Write "Step 0b - SAP password: "
-        SAP_PASSWORD = WScript.StdIn.ReadLine
-    End If
-    envP("ZSEC_SAP_USER") = SAP_USER
-    envP("ZSEC_SAP_PASSWORD") = SAP_PASSWORD
 
     ' Optional user statistics (prompted once, executed by the first worker)
     envP("ZSEC_STATS") = ""
@@ -481,9 +523,12 @@ Sub RunWorker()
     Set envP = shell.Environment("PROCESS")
     If Len(envP("ZSEC_SAP_USER")) > 0 Then SAP_USER = envP("ZSEC_SAP_USER")
     If Len(envP("ZSEC_SAP_PASSWORD")) > 0 Then SAP_PASSWORD = envP("ZSEC_SAP_PASSWORD")
-    If Trim(SAP_USER) = "" Or Len(SAP_PASSWORD) = 0 Then
-        WScript.Echo "SAP credentials not available: start the extractor with sap-extractor-run.bat"
-        WScript.Quit EXIT_CONFIG
+    ' SSO/SNC mode (v9): no credentials are needed, the logon entry authenticates
+    If Not SAP_SSO Then
+        If Trim(SAP_USER) = "" Or Len(SAP_PASSWORD) = 0 Then
+            WScript.Echo "SAP credentials not available: start the extractor with sap-extractor-run.bat"
+            WScript.Quit EXIT_CONFIG
+        End If
     End If
 
     WScript.Echo "Connecting to SAP..."
@@ -580,13 +625,6 @@ Sub RecordTableFailure(ByVal tabName, ByVal msg, ByVal sapException)
     On Error GoTo 0
 End Sub
 
-Sub LogSkippedRecord(ByVal tabName, ByVal recNo, ByVal raw)
-    Dim msg
-    msg = "SKIPPED RECORD " & tabName & " #" & recNo & " (delimiter '" & DELIMITER_CHAR & "' inside a value)"
-    If LOG_RECORD_SAMPLE Then msg = msg & ": " & Left(raw, 80)
-    LogEvent msg
-End Sub
-
 Function IIf(ByVal cond, ByVal a, ByVal b)
     If cond Then
         IIf = a
@@ -656,68 +694,72 @@ Function SapTypeKind(ByVal t)
     End Select
 End Function
 
-Function ConvertByKind(ByVal k, ByVal v)
-    If k = 0 Then
-        ConvertByKind = Trim(v)
-    ElseIf k = 1 Then
-        ConvertByKind = ConvertSapDate(Trim(v))
-    ElseIf k = 2 Then
-        ConvertByKind = ConvertSapTime(Trim(v))
-    ElseIf k = 3 Then
-        ConvertByKind = ConvertSapPacked(v)
-    ElseIf k = 4 Then
-        ConvertByKind = ConvertSapInteger(v)
-    Else
-        ConvertByKind = ConvertSapFloat(v)
+' CLng that never raises: the RFC metadata values (OFFSET, LENGTH) can arrive
+' as numbers, as strings with spaces (" 24 ") or as odd subtypes depending on
+' the SAP GUI OCX version; anything unreadable becomes 0
+Function SafeClng(ByVal v)
+    SafeClng = 0
+    On Error Resume Next
+    SafeClng = CLng(Trim(v & ""))
+    If Err.Number <> 0 Then
+        Err.Clear
+        SafeClng = 0
     End If
+    On Error GoTo 0
 End Function
 
 ' Turns one RFC_READ_TABLE WA record into an output line (lineOut).
-' Returns 0 = ok, 1 = record to SKIP (more values than fields: the delimiter
-' is also inside a value and every following column would be shifted, e.g.
-' text landing in a DATE column), 2 = ok but padded (fewer values than fields)
-Function BuildLine(ByVal raw, ByVal nFields, ByRef fieldKind, ByRef lineOut)
-    Dim vals, ub, j, k, v, padded()
-    If reCtrlTest.Test(raw) Then raw = CleanControlChars(raw)
-    vals = Split(raw, DELIMITER_CHAR)
-    ub = UBound(vals)
-    If ub > nFields - 1 Then
-        BuildLine = 1
-        Exit Function
-    End If
-    If ub = nFields - 1 Then
-        ' normal case: the WA splits into exactly the field count
-        BuildLine = 0
-        For j = 0 To ub
-            k = fieldKind(j)
-            If k = 0 Then
-                vals(j) = Trim(vals(j))
-            ElseIf k = 1 Then
-                vals(j) = ConvertSapDate(Trim(vals(j)))
-            ElseIf k = 2 Then
-                vals(j) = ConvertSapTime(Trim(vals(j)))
-            ElseIf k = 3 Then
-                vals(j) = ConvertSapPacked(vals(j))
-            ElseIf k = 4 Then
-                vals(j) = ConvertSapInteger(vals(j))
-            Else
-                vals(j) = ConvertSapFloat(vals(j))
-            End If
-        Next
-        lineOut = Join(vals, vbTab)
-    Else
-        BuildLine = 2
-        ReDim padded(nFields - 1)
-        For j = 0 To nFields - 1
-            If j <= ub Then
-                v = vals(j)
-            Else
-                v = ""
-            End If
-            padded(j) = ConvertByKind(fieldKind(j), v)
-        Next
-        lineOut = Join(padded, vbTab)
-    End If
+' v9: NO delimiter anymore - RFC_READ_TABLE is called without the DELIMITER
+' parameter, so the backend writes each field left-justified and right-padded
+' with spaces up to its declared LENGTH at its declared OFFSET inside WA (the
+' returned FIELDS table carries OFFSET/LENGTH for every field). The fields
+' are sliced out with Mid(WA, OFFSET + 1, LENGTH) - exactly what zsectools
+' does in parseReadTableRows (sap.js: raw.substring(offset, offset + length))
+' and what the legacy ImportTables.xaml.cs did with Substring(offset, lenght).
+' Why: with a delimiter, any field VALUE containing that character produced
+' more tokens than fields and shifted every following column (10 records of
+' AGR_1251 were lost on 09/10/2026 for this reason); with offsets a record
+' can NEVER be misaligned, so no record is ever skipped anymore.
+' Control characters are cleaned from each value AFTER the slicing: cleaning
+' the whole WA first (as v8 did before splitting) would remove bytes and
+' shift all the offsets.
+' Returns 0 = ok (a record is never skipped or padded by this function: a row
+' shorter than expected simply yields empty tails, which the per-field Trim
+' turns into empty cells, like zsectools does).
+Function BuildLine(ByVal raw, ByVal nFields, ByRef fieldKind, ByRef fieldOffset, ByRef fieldLength, ByRef lineOut)
+    Dim vals(), j, k, v, rowDirty
+    ReDim vals(nFields - 1)
+    ' ONE RegExp test on the whole row (same cost as v8): only rows that
+    ' really contain control characters pay the per-field cleanup - see the
+    ' nested If below (VBScript does NOT short-circuit And/Or)
+    rowDirty = reCtrlTest.Test(raw)
+    For j = 0 To nFields - 1
+        ' Mid returns "" for offsets beyond the end of WA: a short row is
+        ' padded with empty cells, it can never shift the following columns
+        v = Mid(raw, fieldOffset(j) + 1, fieldLength(j))
+        ' nested If instead of "If rowDirty And reCtrlTest.Test(v)": VBScript
+        ' evaluates EVERY operand of And, the inner test must run only when
+        ' the whole row is really dirty (clean rows: zero per-field tests)
+        If rowDirty Then
+            If reCtrlTest.Test(v) Then v = CleanControlChars(v)
+        End If
+        k = fieldKind(j)
+        If k = 0 Then
+            vals(j) = Trim(v)
+        ElseIf k = 1 Then
+            vals(j) = ConvertSapDate(Trim(v))
+        ElseIf k = 2 Then
+            vals(j) = ConvertSapTime(Trim(v))
+        ElseIf k = 3 Then
+            vals(j) = ConvertSapPacked(v)
+        ElseIf k = 4 Then
+            vals(j) = ConvertSapInteger(v)
+        Else
+            vals(j) = ConvertSapFloat(v)
+        End If
+    Next
+    lineOut = Join(vals, vbTab)
+    BuildLine = 0
 End Function
 
 ' Integer (I / INT1): optional sign (SAP may put it AFTER the digits: "5-"),
@@ -853,18 +895,35 @@ Function ConnectSap()
     On Error GoTo 0
 
     Set SapConn = LogonControl.NewConnection
-    SapConn.System = SAP_SYSTEM
-    SapConn.ApplicationServer = SAP_ASHOST
-    SapConn.SystemNumber = SAP_SYSNR
-    SapConn.Client = SAP_CLIENT
-    SapConn.User = SAP_USER
-    SapConn.Password = SAP_PASSWORD
-    SapConn.Language = SAP_LANG
-    SapConn.SAPRouter = SAP_ROUTER
+
+    If SAP_SSO Then
+        ' v9 - SSO/SNC: the saplogon.ini entry named in SAP_LOGON_ENTRY carries
+        ' the SNC configuration (SNC name, QOP, SSO flag); only client and
+        ' language are overridden here
+        SapConn.UseSAPLogonIni = True
+        SapConn.System = SAP_LOGON_ENTRY
+        SapConn.Client = SAP_CLIENT
+        SapConn.Language = SAP_LANG
+    Else
+        SapConn.System = SAP_SYSTEM
+        SapConn.ApplicationServer = SAP_ASHOST
+        SapConn.SystemNumber = SAP_SYSNR
+        SapConn.Client = SAP_CLIENT
+        SapConn.User = SAP_USER
+        SapConn.Password = SAP_PASSWORD
+        SapConn.Language = SAP_LANG
+        SapConn.SAPRouter = SAP_ROUTER
+    End If
 
     okLogon = False
     On Error Resume Next
-    okLogon = SapConn.Logon(0, True)
+    If SAP_SSO Then
+        ' SSO: non-silent logon (SAP dialogs enabled): an SNC problem shows
+        ' its error popup instead of failing with a generic logon error
+        okLogon = SapConn.Logon(0, False)
+    Else
+        okLogon = SapConn.Logon(0, True)
+    End If
     If Err.Number <> 0 Then logonErr = Err.Description
     Err.Clear
     On Error GoTo 0
@@ -916,10 +975,10 @@ End Sub
 
 Function ExtractTable(tabName)
     Dim rfcData, tblData, tblFieldsOut, tblOptions, tblFieldsParam
-    Dim fileBase, tmpFile, batchIndex, totalRows, nRows, i, j, ub
-    Dim fieldNames(), fieldTypes(), nFields, headerWritten
-    Dim fieldKind(), lineStatus, tblSkipped, tblShort, rfcEx
-    Dim valuesArray, paddedArr, rawString, singleValue, lineOut
+    Dim fileBase, tmpFile, batchIndex, totalRows, nRows, i
+    Dim fieldNames(), fieldTypes(), fieldOffset(), fieldLength(), nFields, headerWritten
+    Dim fieldKind(), rfcEx
+    Dim lineOut, metaOk
     Dim fieldOverride, tableFilter, pendingHeader
     Dim rowStream, tRfc, tConv, singlePart(0)
     Dim callOk, callErr, callErrDesc
@@ -969,8 +1028,6 @@ Function ExtractTable(tabName)
         totalRows = 0
         headerWritten = False
         pendingHeader = ""
-        tblSkipped = 0
-        tblShort = 0
 
         ' memory hygiene: fresh connection if the current one served enough
         CheckRecycleConnection
@@ -986,7 +1043,10 @@ Function ExtractTable(tabName)
 
             Set rfcData = SapFunc.Add("RFC_READ_TABLE")
             rfcData.Exports("QUERY_TABLE") = tabName
-            rfcData.Exports("DELIMITER") = DELIMITER_CHAR
+            ' v9: do NOT set DELIMITER. Without it SAP pads every field with
+            ' spaces up to its LENGTH at its OFFSET inside WA and the returned
+            ' FIELDS table carries OFFSET/LENGTH, which BuildLine uses to
+            ' slice the row - no value can ever collide with a delimiter char
             rfcData.Exports("ROWSKIPS") = batchIndex * ROWS_PER_BATCH
             rfcData.Exports("ROWCOUNT") = ROWS_PER_BATCH
 
@@ -1001,6 +1061,8 @@ Function ExtractTable(tabName)
             If fieldOverride <> "" Then
                 Set tblFieldsParam = rfcData.Tables("FIELDS")
                 Dim overrideFields, k
+                ' NOTE: "|" here is only the separator of the override field
+                ' list (see GetFieldOverride), not a WA delimiter (v9)
                 overrideFields = Split(fieldOverride, "|")
                 For k = 0 To UBound(overrideFields)
                     tblFieldsParam.Rows.Add
@@ -1084,31 +1146,89 @@ Function ExtractTable(tabName)
                     Exit Do
                 End If
 
-                ' build header/types once, from the returned FIELDS metadata
+                ' build header/types/offsets once, from the returned FIELDS
+                ' metadata (v9: OFFSET/LENGTH are the heart of the parsing)
                 If Not headerWritten Then
                     nFields = tblFieldsOut.Rows.Count
+                    If nFields <= 0 Then
+                        ' v9.1: an empty FIELDS table would make the ReDim
+                        ' below crash with "Subscript out of range: -1" and
+                        ' kill the whole worker: fail THIS table cleanly
+                        rowStream.Close
+                        Set rowStream = Nothing
+                        RecordTableFailure tabName, "empty FIELDS metadata, batch " & (batchIndex + 1), ""
+                        Set tblData = Nothing
+                        Set tblFieldsOut = Nothing
+                        Set tblOptions = Nothing
+                        Set tblFieldsParam = Nothing
+                        On Error Resume Next
+                        SapFunc.Remove(rfcData)
+                        On Error GoTo 0
+                        Set rfcData = Nothing
+                        ExtractTable = False
+                        Exit Function
+                    End If
                     ReDim fieldNames(nFields - 1)
                     ReDim fieldTypes(nFields - 1)
+                    ReDim fieldOffset(nFields - 1)
+                    ReDim fieldLength(nFields - 1)
                     For i = 1 To nFields
                         fieldNames(i - 1) = LCase(Trim(tblFieldsOut.Value(i, "FIELDNAME")))
                         fieldTypes(i - 1) = UCase(Trim(tblFieldsOut.Value(i, "TYPE")))
+                        fieldOffset(i - 1) = SafeClng(tblFieldsOut.Value(i, "OFFSET"))
+                        fieldLength(i - 1) = SafeClng(tblFieldsOut.Value(i, "LENGTH"))
                     Next
                     ' precomputed conversion kind of each column (see SapTypeKind)
                     ReDim fieldKind(nFields - 1)
                     For i = 0 To nFields - 1
                         fieldKind(i) = SapTypeKind(fieldTypes(i))
                     Next
+                    ' v9 sanity check: the slicing trusts OFFSET/LENGTH
+                    ' completely - a zero length or a not-increasing OFFSET
+                    ' would silently shift every column (exactly what this
+                    ' version must never do): fail the table loudly instead
+                    metaOk = True
+                    For i = 0 To nFields - 1
+                        If fieldLength(i) <= 0 Then metaOk = False
+                        ' v9.1: NESTED If, never "i > 0 And ... (i - 1)":
+                        ' VBScript evaluates EVERY operand of And (no
+                        ' short-circuit), so at i = 0 the operand
+                        ' fieldOffset(i - 1) = fieldOffset(-1) raised
+                        ' "Subscript out of range: -1" and crashed the worker
+                        ' on the first table (v9 bug: ALL tables failed)
+                        If i > 0 Then
+                            If fieldOffset(i) < fieldOffset(i - 1) Then metaOk = False
+                        End If
+                    Next
+                    If Not metaOk Then
+                        rowStream.Close
+                        Set rowStream = Nothing
+                        RecordTableFailure tabName, "invalid FIELDS metadata (OFFSET/LENGTH), batch " & (batchIndex + 1), ""
+                        Set tblData = Nothing
+                        Set tblFieldsOut = Nothing
+                        Set tblOptions = Nothing
+                        Set tblFieldsParam = Nothing
+                        On Error Resume Next
+                        SapFunc.Remove(rfcData)
+                        On Error GoTo 0
+                        Set rfcData = Nothing
+                        ExtractTable = False
+                        Exit Function
+                    End If
                     ' the file header rides in the first batch stream
+                    ' ("|" in "# TYPES:" is the file-format separator, not a
+                    ' WA delimiter)
                     pendingHeader = "# Table: " & UCase(tabName) & vbCrLf & _
                                     "# TYPES: " & Join(MapTypesArray(fieldTypes), "|") & vbCrLf & _
                                     Join(fieldNames, vbTab) & vbCrLf
                     headerWritten = True
                 End If
 
-                ' convert each row (same conversions as zsectools: split |, Trim
-                ' per field, conversions only on D/T/P columns) and write it to
-                ' the table stream immediately - one line at a time, no row
-                ' array, no Join of rows. The largest string here is a line.
+                ' convert each row (same conversions as zsectools: slice WA by
+                ' OFFSET/LENGTH, Trim per field, conversions only on D/T/P
+                ' columns) and write it to the table stream immediately - one
+                ' line at a time, no row array, no Join of rows. The largest
+                ' string here is a line.
                 ' The whole loop is guarded: the OCX can raise "not enough
                 ' memory" on Value() after many batches - in that case the
                 ' partial output is discarded and the table is restarted.
@@ -1123,28 +1243,20 @@ Function ExtractTable(tabName)
                 End If
                 If Err.Number = 0 Then
                     For i = 1 To nRows
-                        ' BuildLine strips control chars (NUL...), splits on the delimiter,
-                        ' converts each field and returns: 0 = ok, 1 = skip (delimiter
-                        ' inside a value: columns would be shifted), 2 = ok but padded
-                        lineStatus = BuildLine(tblData.Value(i, "WA") & "", nFields, fieldKind, lineOut)
+                        ' v9: BuildLine slices WA with OFFSET/LENGTH (no
+                        ' delimiter): a record can no longer be skipped or
+                        ' shifted, it is ALWAYS converted and written
+                        BuildLine tblData.Value(i, "WA") & "", nFields, fieldKind, fieldOffset, fieldLength, lineOut
                         If Err.Number <> 0 Then
                             convErr = True
                             convErrDesc = Err.Description
                             Exit For
                         End If
-                        If lineStatus = 1 Then
-                            tblSkipped = tblSkipped + 1
-                            If tblSkipped <= MAX_LOGGED_SKIPS Then
-                                LogSkippedRecord tabName, batchIndex * ROWS_PER_BATCH + i, tblData.Value(i, "WA") & ""
-                            End If
-                        Else
-                            If lineStatus = 2 Then tblShort = tblShort + 1
-                            rowStream.WriteText lineOut, 1   ' adWriteLine: line + CRLF
-                            If Err.Number <> 0 Then
-                                convErr = True
-                                convErrDesc = Err.Description
-                                Exit For
-                            End If
+                        rowStream.WriteText lineOut, 1   ' adWriteLine: line + CRLF
+                        If Err.Number <> 0 Then
+                            convErr = True
+                            convErrDesc = Err.Description
+                            Exit For
                         End If
                     Next
                 End If
@@ -1217,18 +1329,11 @@ Function ExtractTable(tabName)
         Set rowStream = Nothing
         singlePart(0) = tmpFile
         ConcatTempFiles singlePart, 1, fileBase
-        WScript.Echo "  -> Downloaded " & (totalRows - tblSkipped) & " lines: " & fileBase
+        WScript.Echo "  -> Downloaded " & totalRows & " lines: " & fileBase
     End If
-    If tblSkipped > 0 Then
-        WScript.Echo "  -> WARNING: " & tblSkipped & " record(s) SKIPPED: the delimiter '" & DELIMITER_CHAR & _
-                     "' appears inside a value (columns would be shifted). Details in sap-extractor.log"
-        LogEvent "table " & tabName & ": " & tblSkipped & " record(s) skipped (delimiter inside a value)"
-    End If
-    If tblShort > 0 Then
-        WScript.Echo "  -> note: " & tblShort & " record(s) shorter than the field list were padded with empty values"
-        LogEvent "table " & tabName & ": " & tblShort & " short record(s) padded"
-    End If
-    LogEvent "table " & tabName & " done: " & (totalRows - tblSkipped) & " rows"
+    ' v9: no skipped / padded records anymore (the offset/length parsing
+    ' cannot shift a record, whatever a value contains)
+    LogEvent "table " & tabName & " done: " & totalRows & " rows"
     ExtractTable = True
 End Function
 
