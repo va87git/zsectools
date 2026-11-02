@@ -1,4 +1,5 @@
 import { pool } from './client.js';
+import { safeColumnName } from './utils.js';
 
 // SAP Users statistics: save, read, import/export, group.
 export async function saveUserStats(realm, periodType, selectedAtIso, usertcodeRows, mode = 'overwrite') {
@@ -205,7 +206,8 @@ export async function importStatisticsFromTxt(realm, txtContent) {
 
   // Ensure "selected_at" is not duplicated in columnDefs
   const filteredHeader = header.filter((_, idx) => idx !== selectedAtIdx);
-  const columnDefs = filteredHeader.map(col => `"${col.toLowerCase()}" TEXT`).join(', ');
+  const columnNames = filteredHeader.map((col, idx) => `"${safeColumnName(col, idx)}"`).join(', ');
+  const columnDefs = filteredHeader.map((col, idx) => `"${safeColumnName(col, idx)}" TEXT`).join(', ');
 
   await pool.query(`CREATE TABLE IF NOT EXISTS "${sanitizedTableName}" (
     id SERIAL PRIMARY KEY,
@@ -219,7 +221,19 @@ export async function importStatisticsFromTxt(realm, txtContent) {
   await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "action" TEXT`);
   await pool.query(`ALTER TABLE "${sanitizedTableName}" ADD COLUMN IF NOT EXISTS "actiontype" TEXT`);
 
-  let imported = 0;
+  // FIX #46: the previous implementation ran one INSERT per data row (one network
+  // round trip per row), which made large statistics files very slow to import.
+  // Rows are now inserted in batches of multi-row VALUES, falling back to
+  // row-by-row inserts only for the batches that contain invalid rows
+  // (same behaviour as before: log and skip bad rows, import the good ones).
+  const MAX_QUERY_PARAMS = 60000; // PostgreSQL hard limit: 65535, keep a safety margin
+  const MAX_INSERT_ROWS_PER_BATCH = 1000;
+  const insertPrefix = `INSERT INTO "${sanitizedTableName}" (realm, period_type, selected_at, ${columnNames}) VALUES `;
+
+  // Pre-parse all valid rows once (selected_at + data columns, as the single-row
+  // INSERT did: values are NOT trimmed here, exact column count is required).
+  const nowIso = new Date().toISOString();
+  const rows = [];
   for (let i = headerLineIndex + 1; i < linesArray.length; i++) {
     const line = linesArray[i].trim();
     if (line.length === 0 || line.startsWith('#')) continue;
@@ -228,22 +242,56 @@ export async function importStatisticsFromTxt(realm, txtContent) {
     if (values.length !== header.length) continue;
 
     // Use selected_at from file if available, otherwise current date
-    let rowSelectedAt = new Date().toISOString();
+    let rowSelectedAt = nowIso;
     if (selectedAtIdx !== -1 && values[selectedAtIdx]) {
       rowSelectedAt = values[selectedAtIdx];
     }
 
     // Filter out the value corresponding to "selected_at" from the values array
-    const filteredValues = values.filter((_, idx) => idx !== selectedAtIdx);
+    rows.push([rowSelectedAt, ...values.filter((_, idx) => idx !== selectedAtIdx)]);
+  }
 
-    const placeholders = filteredValues.map((_, idx) => `$${idx + 4}`).join(', ');
-    const columnNames = filteredHeader.map(col => `"${col.toLowerCase()}"`).join(', ');
+  const paramsPerRow = 3 + filteredHeader.length;
+  const rowsPerBatch = Math.max(1, Math.min(MAX_INSERT_ROWS_PER_BATCH, Math.floor(MAX_QUERY_PARAMS / paramsPerRow)));
 
-    await pool.query(
-      `INSERT INTO "${sanitizedTableName}" (realm, period_type, selected_at, ${columnNames}) VALUES ($1, $2, $3::timestamptz, ${placeholders})`,
-      [realm, periodType, rowSelectedAt, ...filteredValues]
-    );
-    imported++;
+  let imported = 0;
+  for (let start = 0; start < rows.length; start += rowsPerBatch) {
+    const batchRows = rows.slice(start, start + rowsPerBatch);
+
+    // Reuse $1 (realm) and $2 (period_type) for every row of the batch.
+    const params = [realm, periodType];
+    let p = 2;
+    const tuples = batchRows.map((r) => {
+      p += 1;
+      const selectedAtParam = `$${p}`;
+      params.push(r[0]);
+      const valueParams = r.slice(1).map((v) => {
+        p += 1;
+        params.push(v);
+        return `$${p}`;
+      });
+      return `($1, $2, ${selectedAtParam}::timestamptz, ${valueParams.join(', ')})`;
+    });
+
+    try {
+      await pool.query(`${insertPrefix}${tuples.join(', ')}`, params);
+      imported += batchRows.length;
+    } catch (batchErr) {
+      // One or more rows of the batch are invalid: retry the rows one by one
+      // to keep the old behaviour (log and skip the bad rows).
+      for (const r of batchRows) {
+        try {
+          const placeholders = r.map((_, idx) => (idx === 0 ? '$3::timestamptz' : `$${idx + 3}`)).join(', ');
+          await pool.query(
+            `${insertPrefix}($1, $2, ${placeholders})`,
+            [realm, periodType, ...r]
+          );
+          imported++;
+        } catch (rowErr) {
+          console.error('[txtTransfer] SQL error on statistics row:', rowErr.message);
+        }
+      }
+    }
   }
 
   return { imported, periodType };

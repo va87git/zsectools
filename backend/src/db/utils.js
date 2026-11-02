@@ -11,3 +11,12 @@ export async function tableExists(tableName) {
   );
   return result.rows[0].exists;
 }
+
+// Table/column names coming from imported TXT files must never reach a SQL
+// statement raw: accept only plain identifiers, otherwise fall back to col_N.
+const SAFE_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+
+export function safeColumnName(col, idx = 0) {
+  const name = String(col).trim().toLowerCase();
+  return SAFE_IDENTIFIER_RE.test(name) ? name : `col_${idx + 1}`;
+}

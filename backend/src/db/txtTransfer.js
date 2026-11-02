@@ -1,5 +1,7 @@
+import copyStreams from 'pg-copy-streams';
+import { pipeline } from 'node:stream/promises';
 import { pool } from './client.js';
-import { tableExists } from './utils.js';
+import { tableExists, safeColumnName } from './utils.js';
 
 // Export/import statistics and tables to TXT files
 // Export functions for TXT format
@@ -93,79 +95,259 @@ export async function exportStatisticsToTxt(realm, selectedAt = null, periodType
   }
 }
 
-export async function importTablesFromTxt(realm, tableName, txtContent) {
-  // 1. Rows cleanup
-  const lines = txtContent.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length === 0) return { imported: 0 };
+// ---------------------------------------------------------------------------
+// Import (FIX #46 - low performance of the TXT import)
+//
+// The previous implementation ran one "INSERT INTO ..." per data row
+// (one network round trip + one query parse per row): importing large SAP
+// tables like AGR_1251 or AGR_HIERT from TXT files took minutes or hours.
+// Rows are now streamed into a single "COPY ... FROM STDIN" statement - the
+// same strategy already used by the RFC import (sapImport.js) - with a
+// chunked multi-row INSERT fallback that keeps the old behaviour (import the
+// good rows, log and skip the bad ones) when COPY rejects the data.
+// ---------------------------------------------------------------------------
 
+// PostgreSQL hard limit: 65535 bind parameters per statement. Keep a safety margin.
+const MAX_QUERY_PARAMS = 60000;
+const MAX_INSERT_ROWS_PER_BATCH = 1000;
+
+// Approximate size (in characters) of the chunks pushed into the COPY stream,
+// so huge files never need to be materialized a second time in memory.
+const COPY_CHUNK_CHARS = 1 << 20;
+
+// Column types come from the uploaded TXT file: accept only safe type strings
+// so a crafted file cannot inject SQL into the CREATE TABLE.
+const SAFE_PG_TYPE_RE = /^[A-Za-z][A-Za-z0-9 _]*(\(\d+(,\s*\d+)?\))?$/;
+
+function safeColumnType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  return SAFE_PG_TYPE_RE.test(t) ? t : 'text';
+}
+
+// Escape a value for COPY ... WITH (FORMAT text). Empty values become NULL,
+// exactly like the previous row-by-row INSERT implementation did.
+function escapeCopyValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return '\\N'; // NULL marker for COPY
+  }
+
+  // NUL bytes are not accepted by PostgreSQL TEXT columns: drop them
+  // instead of aborting the whole COPY.
+  // eslint-disable-next-line no-control-regex
+  const str = String(value).replace(/\u0000/g, '');
+  if (str === '') {
+    return '\\N';
+  }
+
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/\t/g, '\\t')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
+
+// Normalize one raw TXT data line into an array of values aligned with the header:
+// - values are trimmed, empty ones become NULL (same rules as before);
+// - rows with fewer columns are padded with NULLs, extra columns are ignored;
+// - unlike the old implementation the line itself is NOT trimmed, so a row whose
+//   first (or last) column is empty keeps its real position instead of shifting.
+function normalizeRow(line, columnCount) {
+  const rawValues = line.split('\t');
+  const values = new Array(columnCount).fill(null);
+  for (let i = 0; i < Math.min(rawValues.length, columnCount); i++) {
+    const val = rawValues[i] ? rawValues[i].trim() : '';
+    values[i] = (val === '' ? null : val);
+  }
+  return values;
+}
+
+// Iterate the lines of a (possibly huge) text without building the whole array of lines.
+function* iterateLines(text, startOffset = 0) {
+  let start = startOffset;
+  while (start < text.length) {
+    const nl = text.indexOf('\n', start);
+    if (nl === -1) {
+      yield text.slice(start);
+      return;
+    }
+    yield text.slice(start, nl);
+    start = nl + 1;
+  }
+}
+
+function isSkippableLine(line) {
+  return /^\s*$/.test(line) || line.trimStart().startsWith('#');
+}
+
+export async function importTablesFromTxt(realm, tableName, txtContent) {
+  if (typeof txtContent !== 'string' || txtContent.trim().length === 0) {
+    return { imported: 0 };
+  }
+
+  // 1. Parse the metadata/header lines (a handful of lines at most).
+  //    Data lines are NOT collected in memory: they are streamed straight into COPY.
   let detectedTableName = tableName;
   let columnTypes = [];
-  let header = [];
-  let dataLines = [];
+  let header = null;
 
-  // 2. Metadata analysis
-  for (const line of lines) {
+  let dataOffset = 0; // character offset just after the header line
+  let consumed = 0;
+  for (const rawLine of iterateLines(txtContent)) {
+    consumed += rawLine.length + 1; // +1 for '\n' (harmless for the last line)
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
     if (line.startsWith('# Table:')) {
       detectedTableName = line.replace('# Table:', '').trim();
-    } else if (line.startsWith('# TYPES:')) {
-      columnTypes = line.replace('# TYPES:', '').trim().split('|');
-    } else if (line.startsWith('#')) {
       continue;
-    } else if (header.length === 0) {
-      header = line.split('\t'); // the first non-# line is the header
-    } else {
-      dataLines.push(line); // everything else is data
     }
+    if (line.startsWith('# TYPES:')) {
+      columnTypes = line.replace('# TYPES:', '').trim().split('|');
+      continue;
+    }
+    if (line.startsWith('#')) continue; // any other comment
+    header = line.split('\t'); // the first non-comment line is the header
+    dataOffset = consumed;
+    break;
   }
 
-  if (header.length === 0) return { imported: 0 };
+  if (header === null || header.length === 0) return { imported: 0 };
 
-  // 3. Table creation
+  // 2. Table creation (same schema as before: id + imported_at + data columns)
   const sanitizedTableName = `sap_raw_${realm.toLowerCase()}_${detectedTableName.toLowerCase()}`;
 
-  const tableCheck = await pool.query(
-    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)`,
-    [sanitizedTableName]
-  );
+  const safeColumns = header.map((col, idx) => safeColumnName(col, idx));
+  const columnNames = safeColumns.map((c) => `"${c}"`).join(', ');
 
-  if (!tableCheck.rows[0].exists) {
-    const columnDefs = header.map((col, idx) => {
-      const type = columnTypes[idx] || 'text';
-      return `"${col.toLowerCase()}" ${type}`;
-    }).join(', ');
+  if (!(await tableExists(sanitizedTableName))) {
+    const columnDefs = safeColumns
+      .map((col, idx) => `"${col}" ${safeColumnType(columnTypes[idx])}`)
+      .join(', ');
 
-    await pool.query(`CREATE TABLE "${sanitizedTableName}" (id SERIAL PRIMARY KEY, imported_at TIMESTAMPTZ DEFAULT NOW(), ${columnDefs})`);
+    await pool.query(
+      `CREATE TABLE "${sanitizedTableName}" (id SERIAL PRIMARY KEY, imported_at TIMESTAMPTZ DEFAULT NOW(), ${columnDefs})`
+    );
   }
 
-  // 4. Add data (new version)
+  // 3. Replace the content of the table (same behaviour as before)
   await pool.query(`TRUNCATE TABLE "${sanitizedTableName}"`);
 
-  let imported = 0;
-  for (const line of dataLines) {
-    const rawValues = line.split('\t');
+  // 4. Bulk insert: stream the remaining lines into a single COPY FROM STDIN.
+  try {
+    const imported = await copyLinesIntoTable(sanitizedTableName, columnNames, header.length, txtContent, dataOffset);
+    return { imported };
+  } catch (copyErr) {
+    console.warn(`[txtTransfer] COPY failed for ${sanitizedTableName} (${copyErr.message}), falling back to chunked INSERTs`);
+  }
 
-    // LOGIC CORRECTION:
-    // If the row has fewer columns than the header, fill in null values
-    // if there are more, we truncate them (ignore the excess)
-    const normalizedValues = new Array(header.length).fill(null);
-    for (let i = 0; i < Math.min(rawValues.length, header.length); i++) {
-        const val = rawValues[i] ? rawValues[i].trim() : '';
-        normalizedValues[i] = (val === '' ? null : val);
-    }
+  // 5. Fallback: chunked multi-row INSERTs. Used only when COPY rejects the data
+  //    (e.g. a hand-edited file with a value that does not fit a typed column):
+  //    it preserves the old behaviour of importing the good rows and skipping the bad ones.
+  const imported = await insertLinesInBatches(sanitizedTableName, columnNames, header.length, txtContent, dataOffset);
+  return { imported };
+}
 
-    // now we always have an array of the correct length
-    const placeholders = normalizedValues.map((_, idx) => `$${idx + 1}`).join(', ');
-    const columnNames = header.map(col => `"${col.toLowerCase()}"`).join(', ');
+// Stream all data lines (everything after the header) into COPY ... FROM STDIN.
+async function copyLinesIntoTable(sanitizedTableName, columnNames, columnCount, txtContent, dataOffset) {
+  const client = await pool.connect();
+  let copyError = null;
 
-    try {
-      await pool.query(
-        `INSERT INTO "${sanitizedTableName}" (${columnNames}) VALUES (${placeholders})`,
-        normalizedValues
-      );
-      imported++;
-    } catch (dbErr) {
-      console.error("SQL error on row:", dbErr.message);
+  try {
+    const copyCommand = `COPY "${sanitizedTableName}" (${columnNames}) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t', NULL '\\N')`;
+    const ingestStream = copyStreams.from(copyCommand);
+
+    const copyPromise = new Promise((resolve, reject) => {
+      ingestStream.on('finish', resolve);
+      ingestStream.on('error', reject);
+    });
+    // If pipeline() fails first, copyPromise is never awaited: without this no-op handler
+    // its rejection would be "unhandled" and Node would terminate the whole backend process.
+    copyPromise.catch(() => {});
+
+    client.query(ingestStream);
+
+    let imported = 0;
+    await pipeline(txtDataLineSource(txtContent, dataOffset, columnCount, () => imported++), ingestStream);
+    await copyPromise;
+
+    return imported;
+  } catch (err) {
+    copyError = err;
+    throw err;
+  } finally {
+    // Passing the error destroys the connection instead of returning a broken one to the pool
+    client.release(copyError || undefined);
+  }
+}
+
+// Async generator that reads the data lines after the header, normalizes them and
+// produces COPY-ready TSV chunks (~1MB each), so memory stays flat for huge files.
+async function* txtDataLineSource(txtContent, dataOffset, columnCount, onRow) {
+  let out = '';
+  for (const line of iterateLines(txtContent, dataOffset)) {
+    if (isSkippableLine(line)) continue;
+
+    const values = normalizeRow(line, columnCount);
+    out += values.map(escapeCopyValue).join('\t') + '\n';
+    onRow();
+
+    if (out.length >= COPY_CHUNK_CHARS) {
+      yield out;
+      out = '';
     }
   }
-  return { imported };
+  if (out.length > 0) yield out;
+}
+
+// Fallback: multi-row INSERTs (with a per-row retry for failed batches).
+async function insertLinesInBatches(sanitizedTableName, columnNames, columnCount, txtContent, dataOffset) {
+  const rowsPerBatch = Math.max(1, Math.min(MAX_INSERT_ROWS_PER_BATCH, Math.floor(MAX_QUERY_PARAMS / columnCount)));
+  let imported = 0;
+  let batch = [];
+
+  const flush = async () => {
+    if (batch.length === 0) return;
+    try {
+      const tuples = [];
+      const params = [];
+      let p = 0;
+      for (const values of batch) {
+        const rowPlaceholders = values.map((v) => {
+          p += 1;
+          params.push(v);
+          return `$${p}`;
+        });
+        tuples.push(`(${rowPlaceholders.join(', ')})`);
+      }
+      await pool.query(
+        `INSERT INTO "${sanitizedTableName}" (${columnNames}) VALUES ${tuples.join(', ')}`,
+        params
+      );
+      imported += batch.length;
+    } catch (batchErr) {
+      // One or more rows of the batch are invalid: retry the rows one by one to keep
+      // the old behaviour (log and skip the bad rows, import the good ones).
+      for (const values of batch) {
+        try {
+          const placeholders = values.map((_, idx) => `$${idx + 1}`).join(', ');
+          await pool.query(
+            `INSERT INTO "${sanitizedTableName}" (${columnNames}) VALUES (${placeholders})`,
+            values
+          );
+          imported++;
+        } catch (rowErr) {
+          console.error('[txtTransfer] SQL error on row:', rowErr.message);
+        }
+      }
+    }
+    batch = [];
+  };
+
+  for (const line of iterateLines(txtContent, dataOffset)) {
+    if (isSkippableLine(line)) continue;
+    batch.push(normalizeRow(line, columnCount));
+    if (batch.length >= rowsPerBatch) await flush();
+  }
+  await flush();
+
+  return imported;
 }
