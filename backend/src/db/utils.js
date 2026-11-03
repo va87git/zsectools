@@ -12,11 +12,19 @@ export async function tableExists(tableName) {
   return result.rows[0].exists;
 }
 
-// Table/column names coming from imported TXT files must never reach a SQL
-// statement raw: accept only plain identifiers, otherwise fall back to col_N.
+// Columns used by our own schema: SAP fields with these names get a "_sap" suffix
+// (same convention as the RFC import).
+// Fix #47
+export const RESERVED_COLS = ['id', 'imported_at'];
+
+export function renameReservedColumn(name) {
+  const lower = String(name).trim().toLowerCase();
+  return RESERVED_COLS.includes(lower) ? `${lower}_sap` : lower;
+}
+
 const SAFE_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
 export function safeColumnName(col, idx = 0) {
-  const name = String(col).trim().toLowerCase();
+  const name = renameReservedColumn(col);
   return SAFE_IDENTIFIER_RE.test(name) ? name : `col_${idx + 1}`;
 }
