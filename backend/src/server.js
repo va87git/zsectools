@@ -171,6 +171,21 @@ app.use(express.static(frontendPath));
 //app.use('/api/health', (req, res) => { /* ... */ });
 // ... all other app.get('/api/...') routes ...
 
+// ── Server-side paging (issue #48) ────────────────────────────────────────
+// Every "display data from local DB" endpoint must return only a bounded subset
+// of rows: the client asks for a page (limit/offset), but the values are clamped
+// here so that no request can pull an unbounded result set into memory.
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 1000;
+
+function parsePaging(query, defaultLimit = DEFAULT_PAGE_SIZE) {
+  const rawLimit = Number.parseInt(query?.limit, 10);
+  const rawOffset = Number.parseInt(query?.offset, 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), MAX_PAGE_SIZE) : defaultLimit;
+  const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
+  return { limit, offset };
+}
+
 // ── Software updates (GitHub releases) ────────────────────────────────────
 // TLS inspection proxies (e.g. Zscaler) can break the outbound HTTPS calls:
 // set ALLOW_INSECURE_TLS=true in the .env file to accept self-signed
@@ -650,8 +665,7 @@ app.get('/api/import-sap/tables/:tableName', async (req, res) => {
   try {
     const realm = String(req.query?.realm || '').trim();
     const tableName = String(req.params.tableName || '').trim().toUpperCase();
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
 
     if (!realm || !tableName) {
       res.status(400).json({ ok: false, error: 'realm and tableName are required' });
@@ -713,8 +727,7 @@ app.get('/api/import-sap/user-statistics', async (req, res) => {
   try {
     const realm = String(req.query?.realm || '').trim();
     const periodType = String(req.query?.periodType || '').trim().toUpperCase();
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
 
     if (!realm) {
       res.status(400).json({ ok: false, error: 'realm is required' });
@@ -987,8 +1000,7 @@ app.post('/api/sod/add-element', async (req, res) => {
 
 app.get('/api/sod/ra-elements', async (req, res) => {
   try {
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
     const result = await getSodRaElements(limit, offset);
     res.json({ ok: true, elements: result.rows, total: result.total, limit, offset });
   } catch (error) {
@@ -1087,8 +1099,7 @@ app.get('/api/sod/run-analysis-stream', async (req, res) => {
 app.get('/api/sod/ra-results', async (req, res) => {
   try {
     const format = req.query?.format || 'json';
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
 
     const tableCheck = await pool.query(
       `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'sod_ra_results')`
@@ -1209,8 +1220,7 @@ app.get('/api/reports/results', async (req, res) => {
   try {
     const realm = String(req.query?.realm || '').trim();
     const tableName = String(req.query?.tableName || '').trim();
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
 
     if (!realm || !tableName) {
       res.status(400).json({ ok: false, error: 'realm and tableName are required' });
@@ -1403,8 +1413,7 @@ app.post('/api/coverage/add-user', async (req, res) => {
 app.get('/api/coverage/users', async (req, res) => {
   try {
     const format = req.query?.format || 'json';
-    const limit  = Number(req.query?.limit  || 200);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query, 200);
     const result = await getCoverageUsers(limit, offset);
     // csv export: combined with cov_users_tcodes (join), like mapper function
     if (format === 'csv') {
@@ -1500,8 +1509,7 @@ app.post('/api/coverage/load-roles-from-db', async (req, res) => {
 app.get('/api/coverage/roles', async (req, res) => {
   try {
     const format = req.query?.format || 'json';
-    const limit  = Number(req.query?.limit  || 200);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query, 200);
     const result = await getCoverageRoles(limit, offset);
     // csv export: combined with cov_roles_tcodes (join), like mapper function
     if (format === 'csv') {
@@ -1561,8 +1569,7 @@ app.post('/api/coverage/run', async (req, res) => {
 
 app.get('/api/coverage/results', async (req, res) => {
   try {
-    const limit  = Number(req.query?.limit  || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
     const result = await getCoverageResults(limit, offset);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -1611,8 +1618,7 @@ app.post('/api/mapper/add-element', async (req, res) => {
 app.get('/api/mapper/elements', async (req, res) => {
   try {
     const format = req.query?.format || 'json';
-    const limit  = Number(req.query?.limit  || 200);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query, 200);
     const result = await getMapperElements(limit, offset);
     if (format === 'csv') {
       // Export combined: 1 line for each element×tcode (join on map_element_tcodes),
@@ -1700,8 +1706,7 @@ app.post('/api/mapper/add-role', async (req, res) => {
 app.get('/api/mapper/roles', async (req, res) => {
   try {
     const format = req.query?.format || 'json';
-    const limit  = Number(req.query?.limit  || 200);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query, 200);
     const result = await getMapperRoles(limit, offset);
     if (format === 'csv') {
       // Export combined: 1 line for each role×tcode (join on map_role_tcodes),
@@ -1794,8 +1799,7 @@ app.post('/api/mapper/run', async (req, res) => {
 
 app.get('/api/mapper/results', async (req, res) => {
   try {
-    const limit  = Number(req.query?.limit  || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
     const result = await getMapperResults(limit, offset);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -1960,8 +1964,7 @@ app.post('/api/code-security/run-selected-checks', async (req, res) => {
 // Stored results (paginated)
 app.get('/api/code-security/results', async (req, res) => {
   try {
-    const limit = Number(req.query?.limit || 100);
-    const offset = Number(req.query?.offset || 0);
+    const { limit, offset } = parsePaging(req.query);
     const result = await getCodeSecurityResults(limit, offset);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }

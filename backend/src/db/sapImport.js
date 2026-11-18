@@ -311,9 +311,11 @@ export async function getImportedTableRows(realm, tableName, limit = 100, offset
       `SELECT COUNT(*) as total FROM "${sanitizedTableName}"`,
     );
     const total = Number(countResult.rows[0]?.total || 0);
-//V3:
+    // Server-side paging is mandatory here (issue #48): without LIMIT/OFFSET a large
+    // imported table was fully loaded into memory on every "Show data from local DB".
     const result = await pool.query(
-      `SELECT * FROM "${sanitizedTableName}"`
+      `SELECT * FROM "${sanitizedTableName}" ORDER BY id LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
 
     // Map back to expected row_data format for frontend compatibility
